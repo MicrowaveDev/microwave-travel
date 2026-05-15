@@ -126,7 +126,7 @@ optimize();
     <section class="planner-panel" aria-label="Trip requirements">
       <div>
         <p class="eyebrow">Microwave Travel</p>
-        <h1>Route planner for messy multi-city trips</h1>
+        <h1>Route planner</h1>
       </div>
 
       <label>
@@ -143,27 +143,19 @@ optimize();
         </div>
 
         <div v-for="(stop, index) in stops" :key="stop.id" class="stop-row">
-          <label>
-            Stop {{ index + 1 }}
-            <input v-model="stop.city" list="city-options" type="search" autocomplete="off" />
-          </label>
+          <span class="stop-number">{{ index + 1 }}</span>
+          <input v-model="stop.city" :aria-label="`Stop ${index + 1} city`" list="city-options" type="search" autocomplete="off" />
 
-          <label>
-            Rule
-            <select v-model="stop.rule">
-              <option v-for="option in requirementOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
+          <select v-model="stop.rule" :aria-label="`Stop ${index + 1} requirement`">
+            <option v-for="option in requirementOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
 
-          <label>
-            Date
-            <input v-model="stop.date" :disabled="!stop.rule" type="date" />
-          </label>
+          <input v-model="stop.date" :aria-label="`Stop ${index + 1} requirement date`" :disabled="!stop.rule" type="date" />
 
           <button class="icon-button" type="button" :disabled="stops.length === 1" @click="removeStop(stop.id)">
-            -
+            x
           </button>
         </div>
 
