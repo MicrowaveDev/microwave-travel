@@ -293,6 +293,13 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.price-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
 .price-panel-header strong {
   flex: 0 0 auto;
   border-radius: 999px;
@@ -300,6 +307,21 @@ button:disabled {
   color: #0f5d57;
   background: #dcefed;
   font-size: 0.7rem;
+}
+
+.copy-log-button {
+  min-height: 28px;
+  border: 1px solid #bfd7d4;
+  padding: 4px 10px;
+  color: #0f5d57;
+  background: #f6fbfa;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.copy-log-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .price-panel p,
@@ -313,10 +335,8 @@ button:disabled {
 .price-progress {
   display: grid;
   gap: 6px;
-  max-height: 220px;
   margin: 0;
   padding: 0;
-  overflow: auto;
   list-style: none;
 }
 

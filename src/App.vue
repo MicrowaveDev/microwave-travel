@@ -45,6 +45,7 @@ const error = ref('');
 const plan = ref(null);
 const priceQuote = ref(null);
 const priceProgress = ref([]);
+const copyLogStatus = ref('');
 let optimizeDebounce = null;
 let priceRequestId = 0;
 let pricingAbortController = null;
@@ -107,6 +108,7 @@ async function optimize() {
   error.value = '';
   priceQuote.value = null;
   priceProgress.value = [];
+  copyLogStatus.value = '';
 
   try {
     const response = await fetch('/api/optimize', {
@@ -135,6 +137,7 @@ function scheduleOptimize() {
   clearTimeout(optimizeDebounce);
   priceQuote.value = null;
   priceProgress.value = [];
+  copyLogStatus.value = '';
   optimizeDebounce = setTimeout(() => {
     optimize();
   }, 350);
@@ -224,7 +227,85 @@ async function readPriceStream(response, requestId) {
 }
 
 function appendPriceProgress(event) {
-  priceProgress.value = [...priceProgress.value, event].slice(-80);
+  priceProgress.value = [...priceProgress.value, event];
+}
+
+async function copyPricingLog() {
+  const text = buildPricingLog();
+  try {
+    await navigator.clipboard.writeText(text);
+    copyLogStatus.value = 'Copied';
+  } catch {
+    copyLogWithFallback(text);
+    copyLogStatus.value = 'Copied';
+  }
+  setTimeout(() => {
+    copyLogStatus.value = '';
+  }, 1800);
+}
+
+function buildPricingLog() {
+  const routePlan = plan.value;
+  const quote = priceQuote.value;
+  const lines = [
+    'Microwave Travel price-search log',
+    `Generated: ${new Date().toISOString()}`,
+    '',
+    'Goal for agent:',
+    'Analyze this route-search log and suggest how to reduce API requests, improve candidate ordering, caching, batching, or route/date selection without missing cheaper routes.',
+    '',
+    'Trip input:',
+    `Origin/return: ${origin.value}`,
+    `Stops: ${stops.value.map((stop) => stop.city).join(' -> ')}`,
+    `Requirements: ${buildRequirements().map((item) => `${item.city} ${item.type} ${item.date}`).join('; ') || 'none'}`,
+    `Start date: ${startDate.value}`,
+    `Lock order: ${lockOrder.value ? 'yes' : 'no'}`,
+    '',
+    'Current displayed route:',
+    routePlan?.legs?.length
+      ? routePlan.legs.map((leg, index) => `${index + 1}. ${leg.from} -> ${leg.to} | ${leg.mode} | depart ${leg.departOn} | arrive ${leg.arriveBy} | ${leg.hours}h | ${leg.distanceKm} km`).join('\n')
+      : 'No route plan available.',
+    '',
+    'Price result:',
+    quote
+      ? JSON.stringify({
+          totalAmount: quote.totalAmount,
+          currency: quote.currency,
+          pricedLegCount: quote.pricedLegCount,
+          legCount: quote.legCount,
+          message: quote.message,
+          optimization: quote.optimization || null
+        }, null, 2)
+      : 'Pricing is still running or no quote is available.',
+    '',
+    `Progress events (${priceProgress.value.length}):`,
+    ...priceProgress.value.map(formatProgressEvent),
+    '',
+    `Provider attempts (${quote?.attempts?.length || 0}):`,
+    ...(quote?.attempts || []).map((attempt, index) => `${index + 1}. ${JSON.stringify(attempt)}`),
+    '',
+    `Priced legs (${quote?.legs?.length || 0}):`,
+    ...(quote?.legs || []).map((leg, index) => `${index + 1}. ${JSON.stringify(leg)}`)
+  ];
+
+  return lines.join('\n');
+}
+
+function formatProgressEvent(event, index) {
+  const details = event.details ? ` | ${JSON.stringify(event.details)}` : '';
+  return `${index + 1}. [${event.at || 'no-time'}] ${event.step}: ${event.message}${details}`;
+}
+
+function copyLogWithFallback(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.append(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  textarea.remove();
 }
 
 function legPrice(index) {
@@ -349,7 +430,12 @@ optimize();
             <span>{{ pricingLoading ? 'Live pricing' : 'Pricing result' }}</span>
             <p>{{ currentPriceStatus }}</p>
           </div>
-          <strong v-if="pricingLoading">{{ priceProgress.length }} steps</strong>
+          <div class="price-actions">
+            <strong v-if="pricingLoading">{{ priceProgress.length }} steps</strong>
+            <button class="copy-log-button" type="button" :disabled="!priceProgress.length" @click="copyPricingLog">
+              {{ copyLogStatus || 'Copy log' }}
+            </button>
+          </div>
         </div>
         <ul v-if="visiblePriceProgress.length" class="price-progress">
           <li v-for="(event, index) in visiblePriceProgress" :key="`${event.at}-${event.step}-${index}`">
