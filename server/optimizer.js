@@ -63,6 +63,7 @@ export function optimizeTrip(input) {
   const origin = normalizeCity(input.origin);
   const stops = Array.isArray(input.stops) ? input.stops.map(normalizeCity).filter(Boolean) : parseStops(input.stopsText);
   const deadline = input.deadline?.city ? input.deadline : parseDeadline(input.requirementsText);
+  const requirements = normalizeRequirements(input.requirements, deadline);
   const startDate = parseDate(input.startDate) || new Date();
   const lockOrder = input.lockOrder === true;
 
@@ -73,9 +74,9 @@ export function optimizeTrip(input) {
     throw new Error('Add at least one stop.');
   }
 
-  const orderedStops = lockOrder ? stops : findBestStopOrder(origin, stops, deadline, startDate);
+  const orderedStops = lockOrder ? stops : findBestStopOrder(origin, stops, requirements, startDate);
   const itinerary = buildItinerary(origin, orderedStops, startDate);
-  const warnings = validateDeadline(itinerary, deadline);
+  const warnings = validateRequirements(itinerary, requirements);
   const score = Math.max(0, Math.round(100 - itinerary.totalHours * 1.15 - warnings.length * 18));
 
   return {
@@ -87,17 +88,17 @@ export function optimizeTrip(input) {
     totalDistanceKm: Math.round(itinerary.totalDistanceKm),
     legs: itinerary.legs,
     warnings,
-    deadline: deadline || null
+    requirements
   };
 }
 
-function findBestStopOrder(origin, stops, deadline, startDate) {
+function findBestStopOrder(origin, stops, requirements, startDate) {
   if (stops.length > 8) return nearestNeighbor(origin, stops);
 
   let best = null;
   for (const candidate of uniquePermutations(stops)) {
     const itinerary = buildItinerary(origin, candidate, startDate);
-    const deadlinePenalty = validateDeadline(itinerary, deadline).length * 1000;
+    const deadlinePenalty = validateRequirements(itinerary, requirements).length * 1000;
     const score = itinerary.totalHours + deadlinePenalty;
     if (!best || score < best.score) {
       best = { score, candidate };
@@ -137,12 +138,14 @@ function buildItinerary(origin, stops, startDate) {
     const from = route[index];
     const to = route[index + 1];
     const estimate = routeEstimate(from, to);
+    const departOn = cursor.toISOString().slice(0, 10);
     cursor = addHours(cursor, estimate.hours);
     totalHours += estimate.hours;
     totalDistanceKm += estimate.distanceKm;
     legs.push({
       from,
       to,
+      departOn,
       arriveBy: cursor.toISOString().slice(0, 10),
       hours: round1(estimate.hours),
       distanceKm: Math.round(estimate.distanceKm),
@@ -179,6 +182,44 @@ function validateDeadline(itinerary, deadline) {
   return arrivalDate < deadlineDate
     ? []
     : [`${deadline.city} arrives on ${firstArrival.arriveBy}, missing the ${deadline.before} deadline.`];
+}
+
+function normalizeRequirements(requirements, legacyDeadline) {
+  const normalized = Array.isArray(requirements)
+    ? requirements
+        .map((requirement) => ({
+          city: normalizeCity(requirement.city),
+          type: requirement.type === 'after' ? 'after' : 'before',
+          date: parseDate(requirement.date)?.toISOString().slice(0, 10)
+        }))
+        .filter((requirement) => requirement.city && requirement.date)
+    : [];
+
+  if (normalized.length > 0) return normalized;
+  if (legacyDeadline?.city && legacyDeadline?.before) {
+    return [{ city: normalizeCity(legacyDeadline.city), type: 'before', date: legacyDeadline.before }];
+  }
+  return [];
+}
+
+function validateRequirements(itinerary, requirements) {
+  return requirements.flatMap((requirement) => {
+    const firstArrival = itinerary.legs.find((leg) => leg.to === requirement.city);
+    if (!firstArrival) {
+      return [`${requirement.city} has a ${requirement.type} ${requirement.date} rule, but it is not in the route.`];
+    }
+
+    const arrivalDate = new Date(`${firstArrival.arriveBy}T00:00:00.000Z`);
+    const ruleDate = new Date(`${requirement.date}T00:00:00.000Z`);
+    if (requirement.type === 'after') {
+      return arrivalDate > ruleDate
+        ? []
+        : [`${requirement.city} arrives on ${firstArrival.arriveBy}, before the after-${requirement.date} rule.`];
+    }
+    return arrivalDate < ruleDate
+      ? []
+      : [`${requirement.city} arrives on ${firstArrival.arriveBy}, missing the before-${requirement.date} rule.`];
+  });
 }
 
 function uniquePermutations(items) {

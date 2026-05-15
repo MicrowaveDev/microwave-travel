@@ -17,7 +17,7 @@ body {
 
 button,
 input,
-textarea {
+select {
   font: inherit;
 }
 
@@ -61,7 +61,7 @@ label {
 }
 
 input,
-textarea {
+select {
   width: 100%;
   border: 1px solid #bfccca;
   border-radius: 8px;
@@ -72,19 +72,72 @@ textarea {
 }
 
 input:focus,
-textarea:focus {
+select:focus {
   border-color: #0f766e;
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
 }
 
-textarea {
-  resize: vertical;
+select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #4b5b63 50%),
+    linear-gradient(135deg, #4b5b63 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 50%,
+    calc(100% - 13px) 50%;
+  background-repeat: no-repeat;
+  background-size:
+    5px 5px,
+    5px 5px;
+}
+
+input:disabled {
+  color: #8a999e;
+  background: #edf2f1;
 }
 
 .field-row {
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr);
   gap: 14px;
+}
+
+.route-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.route-header,
+.stop-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(130px, 1fr) 150px 42px;
+  gap: 10px;
+  align-items: end;
+}
+
+.route-header {
+  color: #4b5b63;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.stop-row {
+  padding: 10px;
+  border: 1px solid #d8e0df;
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.stop-row label {
+  gap: 6px;
+  font-size: 0.78rem;
+}
+
+.stop-row input,
+.stop-row select {
+  min-height: 42px;
+  padding: 10px 12px;
 }
 
 .check-row {
@@ -113,6 +166,26 @@ button:disabled {
   opacity: 0.72;
 }
 
+.secondary-button {
+  color: #0f5d57;
+  background: #dcefed;
+}
+
+.icon-button {
+  display: grid;
+  width: 42px;
+  min-height: 42px;
+  place-items: center;
+  padding: 0;
+  background: #607178;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+}
+
 .error,
 .warning-list p {
   margin: 0;
@@ -130,7 +203,7 @@ button:disabled {
 
 .summary-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -178,6 +251,42 @@ button:disabled {
   margin-bottom: 18px;
 }
 
+.price-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+  border: 1px solid #d8e0df;
+  border-radius: 8px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.price-panel p {
+  margin: 0;
+  color: #35464d;
+  font-weight: 800;
+}
+
+.provider-attempts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.provider-attempts span {
+  border-radius: 999px;
+  padding: 6px 9px;
+  color: #0f5d57;
+  background: #dcefed;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.provider-attempts .failed {
+  color: #7a4a00;
+  background: #fff4d8;
+}
+
 .legs {
   display: grid;
   gap: 12px;
@@ -219,6 +328,12 @@ h2 {
   color: #5d6f77;
 }
 
+.leg-price {
+  margin-top: 6px;
+  color: #0f766e;
+  font-weight: 900;
+}
+
 .legs small {
   display: block;
   margin-top: 8px;
@@ -242,7 +357,17 @@ h2 {
   }
 
   .field-row,
+  .route-header,
+  .stop-row,
   .summary-strip {
     grid-template-columns: 1fr;
+  }
+
+  .route-header {
+    display: none;
+  }
+
+  .icon-button {
+    width: 100%;
   }
 }

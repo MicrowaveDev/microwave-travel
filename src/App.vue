@@ -1,23 +1,67 @@
 <script setup>
 import { computed, ref } from 'vue';
 
+const cityOptions = ['Porto', 'Doha', 'Dubai', 'Kaliningrad', 'Moscow'];
+const requirementOptions = [
+  { value: '', label: 'No date rule' },
+  { value: 'before', label: 'Arrive before' },
+  { value: 'after', label: 'Arrive after' }
+];
+
 const origin = ref('Porto');
-const stopsText = ref('Doha, Dubai, Kaliningrad, Moscow, Dubai, Doha');
-const requirementsText = ref('Dubai before 1 June');
+const stops = ref([
+  createStop('Doha'),
+  createStop('Dubai', 'before', '2026-06-01'),
+  createStop('Kaliningrad'),
+  createStop('Moscow'),
+  createStop('Dubai'),
+  createStop('Doha')
+]);
 const startDate = ref('2026-05-20');
 const lockOrder = ref(false);
 const loading = ref(false);
+const pricingLoading = ref(false);
 const error = ref('');
 const plan = ref(null);
+const priceQuote = ref(null);
 
 const routeLabel = computed(() => {
   if (!plan.value) return '';
   return [plan.value.origin, ...plan.value.stops, plan.value.returnsTo].join(' -> ');
 });
 
+function createStop(city = 'Doha', rule = '', date = '') {
+  return {
+    id: crypto.randomUUID(),
+    city,
+    rule,
+    date
+  };
+}
+
+function addStop() {
+  stops.value.push(createStop());
+}
+
+function removeStop(id) {
+  if (stops.value.length === 1) return;
+  stops.value = stops.value.filter((stop) => stop.id !== id);
+}
+
+function buildRequirements() {
+  return stops.value
+    .filter((stop) => stop.rule && stop.date)
+    .map((stop) => ({
+      city: stop.city,
+      type: stop.rule,
+      date: stop.date
+    }));
+}
+
 async function optimize() {
   loading.value = true;
   error.value = '';
+  priceQuote.value = null;
 
   try {
     const response = await fetch('/api/optimize', {
@@ -25,8 +69,8 @@ async function optimize() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         origin: origin.value,
-        stopsText: stopsText.value,
-        requirementsText: requirementsText.value,
+        stops: stops.value.map((stop) => stop.city),
+        requirements: buildRequirements(),
         startDate: startDate.value,
         lockOrder: lockOrder.value
       })
@@ -34,11 +78,44 @@ async function optimize() {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Could not optimize this trip.');
     plan.value = payload;
+    fetchPrices(payload);
   } catch (caught) {
     error.value = caught.message;
   } finally {
     loading.value = false;
   }
+}
+
+async function fetchPrices(routePlan = plan.value) {
+  if (!routePlan?.legs?.length) return;
+
+  pricingLoading.value = true;
+  try {
+    const response = await fetch('/api/prices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ legs: routePlan.legs })
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Could not fetch flight prices.');
+    priceQuote.value = payload;
+  } catch (caught) {
+    priceQuote.value = {
+      provider: null,
+      currency: 'USD',
+      totalAmount: null,
+      legs: [],
+      attempts: [{ provider: 'pricing', ok: false, error: caught.message }],
+      message: caught.message
+    };
+  } finally {
+    pricingLoading.value = false;
+  }
+}
+
+function legPrice(index) {
+  const price = priceQuote.value?.legs?.[index]?.amount;
+  return typeof price === 'number' ? `$${price.toLocaleString()}` : null;
 }
 
 optimize();
@@ -54,22 +131,53 @@ optimize();
 
       <label>
         Start and return city
-        <input v-model="origin" type="text" autocomplete="off" />
+        <input v-model="origin" list="city-options" type="search" autocomplete="off" />
       </label>
 
-      <label>
-        Stops
-        <textarea v-model="stopsText" rows="5" />
-      </label>
+      <div class="route-editor">
+        <div class="route-header">
+          <span>Stops</span>
+          <span>Requirement</span>
+          <span>Date</span>
+          <span></span>
+        </div>
+
+        <div v-for="(stop, index) in stops" :key="stop.id" class="stop-row">
+          <label>
+            Stop {{ index + 1 }}
+            <input v-model="stop.city" list="city-options" type="search" autocomplete="off" />
+          </label>
+
+          <label>
+            Rule
+            <select v-model="stop.rule">
+              <option v-for="option in requirementOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+
+          <label>
+            Date
+            <input v-model="stop.date" :disabled="!stop.rule" type="date" />
+          </label>
+
+          <button class="icon-button" type="button" :disabled="stops.length === 1" @click="removeStop(stop.id)">
+            -
+          </button>
+        </div>
+
+        <button class="secondary-button" type="button" @click="addStop">Add stop</button>
+      </div>
+
+      <datalist id="city-options">
+        <option v-for="city in cityOptions" :key="city" :value="city"></option>
+      </datalist>
 
       <div class="field-row">
         <label>
           Trip start
           <input v-model="startDate" type="date" />
-        </label>
-        <label>
-          Requirement
-          <input v-model="requirementsText" type="text" autocomplete="off" />
         </label>
       </div>
 
@@ -99,10 +207,24 @@ optimize();
           <span>Distance</span>
           <strong>{{ plan.totalDistanceKm.toLocaleString() }} km</strong>
         </div>
+        <div>
+          <span>Price</span>
+          <strong>{{ priceQuote?.totalAmount ? `$${priceQuote.totalAmount.toLocaleString()}` : pricingLoading ? 'Loading' : 'Needs key' }}</strong>
+        </div>
       </div>
 
       <div v-if="plan" class="route-map">
         <p>{{ routeLabel }}</p>
+      </div>
+
+      <div v-if="priceQuote || pricingLoading" class="price-panel">
+        <p v-if="pricingLoading">Fetching USD flight prices...</p>
+        <p v-else>{{ priceQuote.message }}</p>
+        <div v-if="priceQuote?.attempts?.length" class="provider-attempts">
+          <span v-for="attempt in priceQuote.attempts" :key="attempt.provider" :class="{ failed: !attempt.ok }">
+            {{ attempt.provider }} {{ attempt.ok ? 'ready' : attempt.error }}
+          </span>
+        </div>
       </div>
 
       <div v-if="plan?.warnings.length" class="warning-list">
@@ -114,7 +236,11 @@ optimize();
           <div class="leg-index">{{ index + 1 }}</div>
           <div>
             <h2>{{ leg.from }} to {{ leg.to }}</h2>
-            <p>{{ leg.hours }}h · {{ leg.distanceKm.toLocaleString() }} km · arrive by {{ leg.arriveBy }}</p>
+            <p>
+              {{ leg.departOn }} · {{ leg.hours }}h · {{ leg.distanceKm.toLocaleString() }} km · arrive by
+              {{ leg.arriveBy }}
+            </p>
+            <p v-if="legPrice(index)" class="leg-price">{{ legPrice(index) }} USD</p>
             <small>{{ leg.note }} Reliability {{ Math.round(leg.reliability * 100) }}%.</small>
           </div>
         </li>

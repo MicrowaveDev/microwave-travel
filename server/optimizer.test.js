@@ -26,4 +26,15 @@ describe('travel optimizer', () => {
     assert.ok(firstDubai.arriveBy < '2026-06-01');
     assert.equal(plan.warnings.length, 0);
   });
+
+  it('adds departure dates to each leg for flight pricing', () => {
+    const plan = optimizeTrip({
+      origin: 'porto',
+      stops: ['doha'],
+      startDate: '2026-05-20'
+    });
+
+    assert.equal(plan.legs[0].departOn, '2026-05-20');
+    assert.ok(plan.legs[0].arriveBy);
+  });
 });

@@ -1,5 +1,7 @@
+import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
+import { quoteFlightPrices } from './flight-prices.js';
 import { optimizeTrip } from './optimizer.js';
 
 const app = express();
@@ -15,6 +17,14 @@ app.get('/api/health', (_request, response) => {
 app.post('/api/optimize', (request, response) => {
   try {
     response.json(optimizeTrip(request.body || {}));
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/prices', async (request, response) => {
+  try {
+    response.json(await quoteFlightPrices(request.body || {}));
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
