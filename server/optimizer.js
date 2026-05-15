@@ -171,15 +171,20 @@ function expandRouteForTransfers(route) {
   for (let index = 1; index < route.length; index += 1) {
     const previous = expanded[expanded.length - 1];
     const current = route[index];
-    if (current === 'Kaliningrad' && previous !== 'Gdansk') {
+
+    if (current === 'Kaliningrad' && previous !== 'Gdansk' && !isRussianMainland(previous)) {
       expanded.push('Gdansk');
     }
-    if (previous === 'Kaliningrad' && current !== 'Gdansk') {
+    if (previous === 'Kaliningrad' && current !== 'Gdansk' && !isRussianMainland(current)) {
       expanded.push('Gdansk');
     }
     expanded.push(current);
   }
   return expanded;
+}
+
+function isRussianMainland(city) {
+  return city === 'Moscow';
 }
 
 function routeEstimate(from, to) {

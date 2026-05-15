@@ -48,7 +48,21 @@ describe('travel optimizer', () => {
 
     assert.deepEqual(
       plan.legs.map((leg) => `${leg.from}->${leg.to}:${leg.mode}`),
-      ['Porto->Gdansk:flight', 'Gdansk->Kaliningrad:bus', 'Kaliningrad->Gdansk:bus', 'Gdansk->Moscow:flight', 'Moscow->Porto:flight']
+      ['Porto->Gdansk:flight', 'Gdansk->Kaliningrad:bus', 'Kaliningrad->Moscow:flight', 'Moscow->Porto:flight']
+    );
+  });
+
+  it('does not route Russia mainland to Kaliningrad through Gdansk', () => {
+    const plan = optimizeTrip({
+      origin: 'moscow',
+      stops: ['kaliningrad'],
+      startDate: '2026-05-20',
+      lockOrder: true
+    });
+
+    assert.deepEqual(
+      plan.legs.map((leg) => `${leg.from}->${leg.to}:${leg.mode}`),
+      ['Moscow->Kaliningrad:flight', 'Kaliningrad->Moscow:flight']
     );
   });
 });
