@@ -48,27 +48,49 @@ const LEG_QUOTE_CACHE_TTL_MS = 60 * 60 * 1000;
 const legQuoteCache = new Map();
 let amadeusTokenCache = null;
 
-export async function quoteFlightPrices(input) {
+export async function quoteFlightPrices(input, options = {}) {
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const legs = normalizeLegs(input.legs);
   if (legs.length === 0) {
     throw new Error('Optimize a route before fetching prices.');
   }
 
-  const quoted = await quoteNormalizedLegs(legs);
+  emitProgress(onProgress, 'pricing-start', `Pricing ${legs.length} flight leg${legs.length === 1 ? '' : 's'} in USD.`, {
+    legCount: legs.length
+  });
+  const quoted = await quoteNormalizedLegs(legs, { onProgress, phase: 'Current route' });
   const quote = normalizeQuote('mixed', quoted.legs, quoted.attempts);
-  return (await optimizePopularTransferRoute(input.legs, quote)) || quote;
+  const optimized = await optimizePopularTransferRoute(input.legs, quote, { onProgress });
+  const finalQuote = optimized || quote;
+  emitProgress(onProgress, 'pricing-complete', finalQuote.totalAmount
+    ? `Finished pricing: $${finalQuote.totalAmount.toLocaleString()} USD.`
+    : 'Finished pricing with partial or missing prices.', {
+    totalAmount: finalQuote.totalAmount,
+    pricedLegCount: finalQuote.pricedLegCount,
+    legCount: finalQuote.legCount
+  });
+  return finalQuote;
 }
 
 export function clearFlightPriceCache() {
   legQuoteCache.clear();
 }
 
-async function quoteNormalizedLegs(legs) {
+async function quoteNormalizedLegs(legs, options = {}) {
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const quotedLegs = [];
   const attempts = [];
 
-  for (const leg of legs) {
-    const result = await quoteLeg(leg);
+  for (const [index, leg] of legs.entries()) {
+    emitProgress(onProgress, 'leg-start', `${options.phase || 'Pricing'}: ${leg.from} to ${leg.to} on ${leg.departureDate}.`, {
+      phase: options.phase,
+      legIndex: index + 1,
+      legCount: legs.length,
+      route: routeLabel(leg),
+      date: leg.departureDate,
+      candidateRoute: options.candidateRoute || null
+    });
+    const result = await quoteLeg(leg, { onProgress, phase: options.phase, candidateRoute: options.candidateRoute });
     quotedLegs.push(result.leg);
     attempts.push(...result.attempts);
   }
@@ -76,7 +98,8 @@ async function quoteNormalizedLegs(legs) {
   return { legs: quotedLegs, attempts };
 }
 
-async function optimizePopularTransferRoute(originalLegs, initialQuote) {
+async function optimizePopularTransferRoute(originalLegs, initialQuote, options = {}) {
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   if (!Array.isArray(originalLegs)) return null;
 
   const optimizationTarget = findPopularRouteTarget(originalLegs);
@@ -88,14 +111,41 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote) {
 
   const currentSuffixQuote = quoteTotalForDisplayLegs(currentSuffix, initialQuote.legs);
   let best = null;
+  const routes = popularTransferRoutes(direction);
+  const dates = dateWindow(currentSuffix[0].departOn, POPULAR_ROUTE_SEARCH_DAYS);
 
-  for (const route of popularTransferRoutes(direction)) {
-    for (const departureDate of dateWindow(currentSuffix[0].departOn, POPULAR_ROUTE_SEARCH_DAYS)) {
+  emitProgress(onProgress, 'compare-start', `Comparing ${routes.length} ${direction.from} to ${direction.to} route options across ${dates.length} dates.`, {
+    from: direction.from,
+    to: direction.to,
+    routeCount: routes.length,
+    dateCount: dates.length,
+    currentAmount: currentSuffixQuote
+  });
+
+  for (const route of routes) {
+    for (const departureDate of dates) {
+      const candidateLabel = route.join(' -> ');
+      emitProgress(onProgress, 'candidate-start', `Trying ${candidateLabel} on ${departureDate}.`, {
+        route,
+        date: departureDate
+      });
       const candidateDisplayLegs = buildLegsForRoute(route, departureDate);
       const candidateNormalizedLegs = normalizeLegs(candidateDisplayLegs);
-      const candidateQuoted = await quoteNormalizedLegs(candidateNormalizedLegs);
+      const candidateQuoted = await quoteNormalizedLegs(candidateNormalizedLegs, {
+        onProgress,
+        phase: 'Compare option',
+        candidateRoute: candidateLabel
+      });
       const candidateQuote = normalizeQuote('mixed', candidateQuoted.legs, candidateQuoted.attempts);
-      if (!Number.isFinite(candidateQuote.totalAmount)) continue;
+      if (!Number.isFinite(candidateQuote.totalAmount)) {
+        emitProgress(onProgress, 'candidate-skip', `${candidateLabel} on ${departureDate}: not enough priced legs to compare.`, {
+          route,
+          date: departureDate,
+          pricedLegCount: candidateQuote.pricedLegCount,
+          legCount: candidateQuote.legCount
+        });
+        continue;
+      }
 
       if (!best || candidateQuote.totalAmount < best.quote.totalAmount) {
         best = {
@@ -104,11 +154,27 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote) {
           displayLegs: candidateDisplayLegs,
           quote: candidateQuote
         };
+        emitProgress(onProgress, 'candidate-best', `${candidateLabel} on ${departureDate} is the current best at $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
+          route,
+          date: departureDate,
+          totalAmount: candidateQuote.totalAmount
+        });
+      } else {
+        emitProgress(onProgress, 'candidate-result', `${candidateLabel} on ${departureDate}: $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
+          route,
+          date: departureDate,
+          totalAmount: candidateQuote.totalAmount
+        });
       }
     }
   }
 
   if (!best || (Number.isFinite(currentSuffixQuote) && best.quote.totalAmount >= currentSuffixQuote)) {
+    emitProgress(onProgress, 'compare-complete', 'No cheaper transfer route beat the current route.', {
+      selectedRoute: null,
+      currentAmount: currentSuffixQuote,
+      bestAmount: best?.quote.totalAmount || null
+    });
     return null;
   }
 
@@ -135,6 +201,12 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote) {
     selectedReturnAmount: best.quote.totalAmount
   };
   combinedQuote.message = `${combinedQuote.message} Optimized ${direction.from} to ${direction.to} via ${best.route.slice(1, -1).join(' / ') || 'direct'} on ${best.departureDate}.`;
+  emitProgress(onProgress, 'compare-complete', `Selected ${best.route.join(' -> ')} on ${best.departureDate} at $${best.quote.totalAmount.toLocaleString()} USD.`, {
+    selectedRoute: best.route,
+    date: best.departureDate,
+    previousAmount: currentSuffixQuote,
+    selectedAmount: best.quote.totalAmount
+  });
   return combinedQuote;
 }
 
@@ -301,7 +373,8 @@ async function quoteWithSerpApi(legs) {
   return normalizeQuote('serpapi', pricedLegs);
 }
 
-async function quoteLeg(leg) {
+async function quoteLeg(leg, options = {}) {
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const providers = isRussianDirection(leg)
     ? [
         ['aviasales', () => quoteLegWithTravelpayouts(leg)],
@@ -316,11 +389,29 @@ async function quoteLeg(leg) {
   let bestNoPriceResult = null;
 
   for (const [provider, fn] of providers) {
-    const result = await tryCachedProvider(provider, leg, fn);
+    emitProgress(onProgress, 'provider-start', `Checking ${providerLabel(provider)} for ${routeLabel(leg)} on ${leg.departureDate}.`, {
+      provider,
+      route: routeLabel(leg),
+      date: leg.departureDate,
+      phase: options.phase,
+      candidateRoute: options.candidateRoute || null,
+      russianDirection: isRussianDirection(leg)
+    });
+    const result = await tryCachedProvider(provider, leg, fn, { onProgress });
     attempts.push({
       ...result.summary,
       route: `${leg.origin}-${leg.destination}`,
       russianDirection: isRussianDirection(leg)
+    });
+    emitProgress(onProgress, result.summary.ok ? 'provider-complete' : 'provider-failed', providerProgressMessage(provider, leg, result), {
+      provider,
+      route: routeLabel(leg),
+      date: leg.departureDate,
+      amount: result.quote?.amount || null,
+      cached: result.summary.cached === true,
+      error: result.summary.error || result.quote?.error || null,
+      phase: options.phase,
+      candidateRoute: options.candidateRoute || null
     });
     if (result.quote) {
       if (Number.isFinite(result.quote.amount) || result.quote.schedule) {
@@ -336,10 +427,16 @@ async function quoteLeg(leg) {
   };
 }
 
-async function tryCachedProvider(provider, leg, fn) {
+async function tryCachedProvider(provider, leg, fn, options = {}) {
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const cacheKey = legQuoteCacheKey(provider, leg);
   const cached = legQuoteCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
+    emitProgress(onProgress, 'cache-hit', `Using cached ${providerLabel(provider)} result for ${routeLabel(leg)} on ${leg.departureDate}.`, {
+      provider,
+      route: routeLabel(leg),
+      date: leg.departureDate
+    });
     return {
       quote: cloneQuote(cached.quote),
       summary: { provider, ok: true, cached: true }
@@ -359,6 +456,28 @@ async function tryCachedProvider(provider, leg, fn) {
 
 function legQuoteCacheKey(provider, leg) {
   return [provider, leg.origin, leg.destination, leg.departureDate, '1', 'USD'].join('|');
+}
+
+function emitProgress(onProgress, step, message, details = {}) {
+  onProgress({
+    step,
+    message,
+    details,
+    at: new Date().toISOString()
+  });
+}
+
+function routeLabel(leg) {
+  return `${leg.from} -> ${leg.to}`;
+}
+
+function providerProgressMessage(provider, leg, result) {
+  const label = providerLabel(provider);
+  if (!result.summary.ok) return `${label} failed for ${routeLabel(leg)}: ${result.summary.error}.`;
+  if (result.summary.cached) return `${label} cache hit for ${routeLabel(leg)}.`;
+  if (Number.isFinite(result.quote?.amount)) return `${label} found ${routeLabel(leg)} for $${result.quote.amount.toLocaleString()} USD.`;
+  if (result.quote?.schedule) return `${label} found schedule data for ${routeLabel(leg)}, but no USD fare.`;
+  return `${label} returned no USD price for ${routeLabel(leg)}.`;
 }
 
 function cloneQuote(quote) {

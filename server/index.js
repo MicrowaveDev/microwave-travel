@@ -30,6 +30,25 @@ app.post('/api/prices', async (request, response) => {
   }
 });
 
+app.post('/api/prices/stream', async (request, response) => {
+  response.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  response.setHeader('Cache-Control', 'no-cache');
+  response.setHeader('X-Accel-Buffering', 'no');
+
+  const writeEvent = (event) => {
+    response.write(`${JSON.stringify({ type: 'progress', event })}\n`);
+  };
+
+  try {
+    const quote = await quoteFlightPrices(request.body || {}, { onProgress: writeEvent });
+    response.write(`${JSON.stringify({ type: 'result', quote })}\n`);
+    response.end();
+  } catch (error) {
+    response.write(`${JSON.stringify({ type: 'error', error: error.message })}\n`);
+    response.end();
+  }
+});
+
 app.listen(port, () => {
   console.log(`Microwave Travel API listening on http://127.0.0.1:${port}`);
 });

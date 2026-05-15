@@ -277,11 +277,70 @@ button:disabled {
   background: #ffffff;
 }
 
-.price-panel p {
+.price-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.price-panel-header span {
+  display: block;
+  margin-bottom: 2px;
+  color: #6a7a82;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.price-panel-header strong {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #0f5d57;
+  background: #dcefed;
+  font-size: 0.7rem;
+}
+
+.price-panel p,
+.price-progress p {
   margin: 0;
   color: #35464d;
   font-size: 0.9rem;
   font-weight: 800;
+}
+
+.price-progress {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.price-progress li {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border-top: 1px solid #edf2f1;
+  padding-top: 6px;
+}
+
+.price-progress span {
+  color: #607178;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.price-progress p {
+  color: #4b5b63;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .provider-attempts {

@@ -44,7 +44,10 @@ const pricingLoading = ref(false);
 const error = ref('');
 const plan = ref(null);
 const priceQuote = ref(null);
+const priceProgress = ref([]);
 let optimizeDebounce = null;
+let priceRequestId = 0;
+let pricingAbortController = null;
 
 const routeLabel = computed(() => {
   if (!plan.value) return '';
@@ -61,6 +64,13 @@ const priceLabel = computed(() => {
   if (priceQuote.value.pricedLegCount > 0) return 'Partial';
   return priceQuote.value.provider ? 'No price' : 'Needs key';
 });
+
+const currentPriceStatus = computed(() => {
+  if (!pricingLoading.value) return priceQuote.value?.message || '';
+  return priceProgress.value.at(-1)?.message || 'Preparing price search...';
+});
+
+const visiblePriceProgress = computed(() => priceProgress.value.slice(-8).reverse());
 
 function createStop(city = 'Doha', rule = '', date = '') {
   return {
@@ -96,6 +106,7 @@ async function optimize() {
   loading.value = true;
   error.value = '';
   priceQuote.value = null;
+  priceProgress.value = [];
 
   try {
     const response = await fetch('/api/optimize', {
@@ -123,6 +134,7 @@ async function optimize() {
 function scheduleOptimize() {
   clearTimeout(optimizeDebounce);
   priceQuote.value = null;
+  priceProgress.value = [];
   optimizeDebounce = setTimeout(() => {
     optimize();
   }, 350);
@@ -131,15 +143,27 @@ function scheduleOptimize() {
 async function fetchPrices(routePlan = plan.value) {
   if (!routePlan?.legs?.length) return;
 
+  if (pricingAbortController) pricingAbortController.abort();
+  const requestId = ++priceRequestId;
+  pricingAbortController = new AbortController();
   pricingLoading.value = true;
+  priceProgress.value = [
+    {
+      step: 'queued',
+      message: 'Preparing route price search...',
+      at: new Date().toISOString()
+    }
+  ];
   try {
-    const response = await fetch('/api/prices', {
+    const response = await fetch('/api/prices/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ legs: routePlan.legs })
+      body: JSON.stringify({ legs: routePlan.legs }),
+      signal: pricingAbortController.signal
     });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || 'Could not fetch flight prices.');
+    if (!response.ok) throw new Error('Could not fetch flight prices.');
+    const payload = await readPriceStream(response, requestId);
+    if (requestId !== priceRequestId || !payload) return;
     priceQuote.value = payload;
     if (payload.optimizedRouteLegs?.length) {
       plan.value = {
@@ -150,6 +174,7 @@ async function fetchPrices(routePlan = plan.value) {
       };
     }
   } catch (caught) {
+    if (caught.name === 'AbortError') return;
     priceQuote.value = {
       provider: null,
       currency: 'USD',
@@ -159,8 +184,47 @@ async function fetchPrices(routePlan = plan.value) {
       message: caught.message
     };
   } finally {
-    pricingLoading.value = false;
+    if (requestId === priceRequestId) {
+      pricingLoading.value = false;
+      pricingAbortController = null;
+    }
   }
+}
+
+async function readPriceStream(response, requestId) {
+  if (!response.body) return response.json();
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalQuote = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.trim() || requestId !== priceRequestId) continue;
+      const event = JSON.parse(line);
+      if (event.type === 'progress') {
+        appendPriceProgress(event.event);
+      } else if (event.type === 'result') {
+        finalQuote = event.quote;
+      } else if (event.type === 'error') {
+        throw new Error(event.error || 'Could not fetch flight prices.');
+      }
+    }
+
+    if (done) break;
+  }
+
+  return finalQuote;
+}
+
+function appendPriceProgress(event) {
+  priceProgress.value = [...priceProgress.value, event].slice(-80);
 }
 
 function legPrice(index) {
@@ -280,10 +344,21 @@ optimize();
       </div>
 
       <div v-if="priceQuote || pricingLoading" class="price-panel">
-        <p v-if="pricingLoading">Fetching USD flight prices...</p>
-        <p v-else>{{ priceQuote.message }}</p>
+        <div class="price-panel-header">
+          <div>
+            <span>{{ pricingLoading ? 'Live pricing' : 'Pricing result' }}</span>
+            <p>{{ currentPriceStatus }}</p>
+          </div>
+          <strong v-if="pricingLoading">{{ priceProgress.length }} steps</strong>
+        </div>
+        <ul v-if="visiblePriceProgress.length" class="price-progress">
+          <li v-for="(event, index) in visiblePriceProgress" :key="`${event.at}-${event.step}-${index}`">
+            <span>{{ event.step.replaceAll('-', ' ') }}</span>
+            <p>{{ event.message }}</p>
+          </li>
+        </ul>
         <div v-if="priceQuote?.attempts?.length" class="provider-attempts">
-          <span v-for="attempt in priceQuote.attempts" :key="attempt.provider" :class="{ failed: !attempt.ok }">
+          <span v-for="(attempt, index) in priceQuote.attempts" :key="`${attempt.provider}-${attempt.route}-${index}`" :class="{ failed: !attempt.ok }">
             {{ attempt.provider }} {{ attempt.ok ? (attempt.cached ? 'cached' : 'ready') : attempt.error }}
           </span>
         </div>

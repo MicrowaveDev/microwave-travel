@@ -31,6 +31,80 @@ describe('flight price providers', () => {
     assert.equal(second.attempts[0].cached, true);
   });
 
+  it('emits progress while fetching provider prices', async () => {
+    clearFlightPriceCache();
+    const originalSerpApiKey = process.env.SERPAPI_KEY;
+    const originalFetch = globalThis.fetch;
+    process.env.SERPAPI_KEY = 'test-serpapi-key';
+    const events = [];
+    globalThis.fetch = async () => Response.json({
+      best_flights: [{ price: 321, flights: [{ airline: 'Test Air' }] }],
+      search_metadata: { id: 'progress-search' }
+    });
+
+    await quoteFlightPrices(
+      { legs: [{ from: 'Porto', to: 'Doha', departOn: '2026-05-20', mode: 'flight' }] },
+      { onProgress: (event) => events.push(event) }
+    );
+
+    globalThis.fetch = originalFetch;
+    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
+    clearFlightPriceCache();
+
+    assert.ok(events.some((event) => event.step === 'pricing-start'));
+    assert.ok(events.some((event) => event.step === 'provider-start'));
+    assert.ok(events.some((event) => event.step === 'provider-complete'));
+    assert.ok(events.some((event) => event.message.includes('Porto -> Doha')));
+  });
+
+  it('emits route comparison progress for popular transfer checks', async () => {
+    clearFlightPriceCache();
+    const originalSerpApiKey = process.env.SERPAPI_KEY;
+    const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
+    const originalYandexKey = process.env.YANDEX_RASP_API_KEY;
+    const originalFetch = globalThis.fetch;
+    process.env.SERPAPI_KEY = 'test-serpapi-key';
+    delete process.env.TRAVELPAYOUTS_TOKEN;
+    delete process.env.YANDEX_RASP_API_KEY;
+    const events = [];
+    const routePrices = new Map([
+      ['DXB-LIS', 1000],
+      ['LIS-OPO', 220],
+      ['DXB-OPO', 900],
+      ['DXB-DOH', 80],
+      ['DOH-OPO', 120]
+    ]);
+    globalThis.fetch = async (url) => {
+      const params = new URL(url).searchParams;
+      const route = `${params.get('departure_id')}-${params.get('arrival_id')}`;
+      const price = routePrices.get(route);
+      return Response.json({
+        best_flights: price ? [{ price, flights: [{ airline: 'Test Air' }] }] : [],
+        search_metadata: { id: `search-${route}` }
+      });
+    };
+
+    await quoteFlightPrices(
+      {
+        legs: [
+          { from: 'Dubai', to: 'Lisbon', departOn: '2026-05-23', mode: 'flight' },
+          { from: 'Lisbon', to: 'Porto', departOn: '2026-05-24', mode: 'flight' }
+        ]
+      },
+      { onProgress: (event) => events.push(event) }
+    );
+
+    globalThis.fetch = originalFetch;
+    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
+    restoreEnv('TRAVELPAYOUTS_TOKEN', originalTravelpayoutsToken);
+    restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
+    clearFlightPriceCache();
+
+    assert.ok(events.some((event) => event.step === 'compare-start'));
+    assert.ok(events.some((event) => event.step === 'candidate-start' && event.message.includes('Dubai -> Doha -> Porto')));
+    assert.ok(events.some((event) => event.step === 'candidate-best'));
+  });
+
   it('reports missing provider credentials without inventing prices', async () => {
     clearFlightPriceCache();
     const originalAmadeusId = process.env.AMADEUS_CLIENT_ID;
