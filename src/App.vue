@@ -67,7 +67,7 @@ const currentPriceStatus = computed(() => {
 
 const visiblePriceProgress = computed(() => priceProgress.value.slice(-8).reverse());
 
-function createStop(city = 'Doha', visitBefore = '', stayDays = 1) {
+function createStop(city = 'Doha', visitBefore = '', stayDays = 0) {
   return {
     id: crypto.randomUUID(),
     city,
@@ -124,7 +124,7 @@ function normalizeStoredStop(stop) {
 
 function normalizeStayDaysInput(value) {
   const days = Number(value);
-  return Number.isFinite(days) && days >= 0 ? Math.round(days * 10) / 10 : 1;
+  return Number.isFinite(days) && days >= 0 ? Math.round(days * 10) / 10 : 0;
 }
 
 function saveTripState() {
