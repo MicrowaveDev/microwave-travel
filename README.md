@@ -35,7 +35,7 @@ YANDEX_RASP_API_KEY=...
 
 If no keys are configured, the app still optimizes routes, but the price panel will show that provider credentials are needed.
 
-Flight provider responses are cached in memory per leg for one hour, keyed by provider, route, departure date, passenger count, and currency. Successful prices and provider-level "no result" responses are cached; missing credentials and other provider failures are not cached.
+Flight provider responses are cached in SQLite per leg for one hour, keyed by provider, route, departure date, passenger count, and currency. By default the cache is stored at `data/flight-price-cache.sqlite`, so recent results survive app restarts and repeated searches do not burn API limits. Set `FLIGHT_PRICE_CACHE_DB=/path/to/cache.sqlite` to move it. Successful prices and provider-level "no result" responses are cached; missing credentials and other provider failures are not cached.
 
 ## Verify
 

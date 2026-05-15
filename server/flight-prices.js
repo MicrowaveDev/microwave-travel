@@ -1,4 +1,10 @@
 import { buildLegsForRoute } from './optimizer.js';
+import {
+  clearCachedFlightPrices,
+  closeFlightPriceCache,
+  getCachedFlightPrice,
+  setCachedFlightPrice
+} from './flight-price-cache.js';
 
 const CITY_IATA_CODES = new Map([
   ['porto', 'OPO'],
@@ -45,7 +51,6 @@ const PORTO_DUBAI_TRANSFER_HUBS = [
 ];
 const POPULAR_ROUTE_SEARCH_DAYS = Number(process.env.POPULAR_ROUTE_SEARCH_DAYS || 4);
 const LEG_QUOTE_CACHE_TTL_MS = 60 * 60 * 1000;
-const legQuoteCache = new Map();
 let amadeusTokenCache = null;
 
 export async function quoteFlightPrices(input, options = {}) {
@@ -73,7 +78,11 @@ export async function quoteFlightPrices(input, options = {}) {
 }
 
 export function clearFlightPriceCache() {
-  legQuoteCache.clear();
+  clearCachedFlightPrices();
+}
+
+export function closeFlightPriceCacheDb() {
+  closeFlightPriceCache();
 }
 
 async function quoteNormalizedLegs(legs, options = {}) {
@@ -430,26 +439,22 @@ async function quoteLeg(leg, options = {}) {
 async function tryCachedProvider(provider, leg, fn, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const cacheKey = legQuoteCacheKey(provider, leg);
-  const cached = legQuoteCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    emitProgress(onProgress, 'cache-hit', `Using cached ${providerLabel(provider)} result for ${routeLabel(leg)} on ${leg.departureDate}.`, {
+  const cachedQuote = getCachedFlightPrice(cacheKey);
+  if (cachedQuote) {
+    emitProgress(onProgress, 'cache-hit', `Using SQLite cached ${providerLabel(provider)} result for ${routeLabel(leg)} on ${leg.departureDate}.`, {
       provider,
       route: routeLabel(leg),
       date: leg.departureDate
     });
     return {
-      quote: cloneQuote(cached.quote),
+      quote: cloneQuote(cachedQuote),
       summary: { provider, ok: true, cached: true }
     };
   }
-  if (cached) legQuoteCache.delete(cacheKey);
 
   const result = await tryProvider(provider, fn);
   if (result.quote) {
-    legQuoteCache.set(cacheKey, {
-      quote: cloneQuote(result.quote),
-      expiresAt: Date.now() + LEG_QUOTE_CACHE_TTL_MS
-    });
+    setCachedFlightPrice(cacheKey, provider, leg, cloneQuote(result.quote), Date.now() + LEG_QUOTE_CACHE_TTL_MS);
   }
   return result;
 }
@@ -474,7 +479,7 @@ function routeLabel(leg) {
 function providerProgressMessage(provider, leg, result) {
   const label = providerLabel(provider);
   if (!result.summary.ok) return `${label} failed for ${routeLabel(leg)}: ${result.summary.error}.`;
-  if (result.summary.cached) return `${label} cache hit for ${routeLabel(leg)}.`;
+  if (result.summary.cached) return `${label} SQLite cache hit for ${routeLabel(leg)}.`;
   if (Number.isFinite(result.quote?.amount)) return `${label} found ${routeLabel(leg)} for $${result.quote.amount.toLocaleString()} USD.`;
   if (result.quote?.schedule) return `${label} found schedule data for ${routeLabel(leg)}, but no USD fare.`;
   return `${label} returned no USD price for ${routeLabel(leg)}.`;

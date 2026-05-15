@@ -1,6 +1,22 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
-import { clearFlightPriceCache, quoteFlightPrices } from './flight-prices.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { after, before, describe, it } from 'node:test';
+import { clearFlightPriceCache, closeFlightPriceCacheDb, quoteFlightPrices } from './flight-prices.js';
+
+const originalCacheDb = process.env.FLIGHT_PRICE_CACHE_DB;
+const testCacheDir = mkdtempSync(join(tmpdir(), 'microwave-travel-cache-suite-'));
+
+before(() => {
+  process.env.FLIGHT_PRICE_CACHE_DB = join(testCacheDir, 'flight-cache.sqlite');
+});
+
+after(() => {
+  closeFlightPriceCacheDb();
+  restoreEnv('FLIGHT_PRICE_CACHE_DB', originalCacheDb);
+  rmSync(testCacheDir, { recursive: true, force: true });
+});
 
 describe('flight price providers', () => {
   it('caches successful leg quote responses for one hour', async () => {
@@ -28,6 +44,39 @@ describe('flight price providers', () => {
     assert.equal(calls, 1);
     assert.equal(first.legs[0].amount, 123);
     assert.equal(second.legs[0].amount, 123);
+    assert.equal(second.attempts[0].cached, true);
+  });
+
+  it('reuses cached provider results from SQLite after reopening the cache', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'microwave-travel-cache-'));
+    const originalCacheDb = process.env.FLIGHT_PRICE_CACHE_DB;
+    const originalSerpApiKey = process.env.SERPAPI_KEY;
+    const originalFetch = globalThis.fetch;
+    process.env.FLIGHT_PRICE_CACHE_DB = join(tempDir, 'flight-cache.sqlite');
+    process.env.SERPAPI_KEY = 'test-serpapi-key';
+    clearFlightPriceCache();
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return Response.json({
+        best_flights: [{ price: 456, flights: [{ airline: 'Persist Air' }] }],
+        search_metadata: { id: 'persistent-search' }
+      });
+    };
+
+    const input = { legs: [{ from: 'Porto', to: 'Doha', departOn: '2026-05-20', mode: 'flight' }] };
+    await quoteFlightPrices(input);
+    closeFlightPriceCacheDb();
+    const second = await quoteFlightPrices(input);
+
+    globalThis.fetch = originalFetch;
+    restoreEnv('FLIGHT_PRICE_CACHE_DB', originalCacheDb);
+    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
+    closeFlightPriceCacheDb();
+    rmSync(tempDir, { recursive: true, force: true });
+
+    assert.equal(calls, 1);
+    assert.equal(second.legs[0].amount, 456);
     assert.equal(second.attempts[0].cached, true);
   });
 
