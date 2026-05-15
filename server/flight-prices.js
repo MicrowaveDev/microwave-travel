@@ -3,6 +3,10 @@ const CITY_IATA_CODES = new Map([
   ['doha', 'DOH'],
   ['dubai', 'DXB'],
   ['gdansk', 'GDN'],
+  ['lisbon', 'LIS'],
+  ['istanbul', 'IST'],
+  ['belgrade', 'BEG'],
+  ['warsaw', 'WAW'],
   ['kaliningrad', 'KGD'],
   ['moscow', 'MOW'],
   ['moskow', 'MOW']

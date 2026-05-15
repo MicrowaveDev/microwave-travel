@@ -1,18 +1,17 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 
-const cityOptions = ['Porto', 'Doha', 'Dubai', 'Kaliningrad', 'Moscow'];
+const cityOptions = ['Porto', 'Doha', 'Dubai', 'Kaliningrad', 'Moscow', 'Lisbon', 'Istanbul', 'Warsaw', 'Belgrade'];
 const requirementOptions = [
   { value: '', label: 'No date rule' },
-  { value: 'before', label: 'Arrive before' },
-  { value: 'after', label: 'Arrive after' },
-  { value: 'departBefore', label: 'Leave before' }
+  { value: 'before', label: 'Visit before' },
+  { value: 'after', label: 'Visit after' }
 ];
 
 const origin = ref('Porto');
 const stops = ref([
   createStop('Doha'),
-  createStop('Dubai', 'departBefore', '2026-06-01'),
+  createStop('Dubai', 'before', '2026-06-01'),
   createStop('Kaliningrad'),
   createStop('Moscow'),
   createStop('Dubai'),

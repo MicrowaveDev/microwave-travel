@@ -27,19 +27,36 @@ describe('travel optimizer', () => {
     assert.equal(plan.warnings.length, 0);
   });
 
-  it('supports leaving Dubai before a date', () => {
+  it('continues from Dubai after visiting before a date', () => {
     const plan = optimizeTrip({
       origin: 'porto',
       stops: ['kaliningrad', 'moscow', 'dubai'],
-      requirements: [{ city: 'dubai', type: 'departBefore', date: '2026-06-01' }],
+      requirements: [{ city: 'dubai', type: 'before', date: '2026-06-01' }],
       startDate: '2026-05-20',
       lockOrder: true
     });
 
+    const dubaiArrival = plan.legs.find((leg) => leg.to === 'Dubai');
     const dubaiDeparture = plan.legs.find((leg) => leg.from === 'Dubai');
+    assert.ok(dubaiArrival);
     assert.ok(dubaiDeparture);
-    assert.ok(dubaiDeparture.departOn < '2026-06-01');
+    assert.ok(dubaiArrival.arriveBy < '2026-06-01');
+    assert.ok(['Lisbon', 'Istanbul', 'Warsaw', 'Belgrade', 'Porto'].includes(dubaiDeparture.to));
     assert.equal(plan.warnings.length, 0);
+  });
+
+  it('considers a Europe hub when returning from Dubai to Porto', () => {
+    const plan = optimizeTrip({
+      origin: 'porto',
+      stops: ['dubai'],
+      startDate: '2026-05-20',
+      lockOrder: true
+    });
+
+    assert.deepEqual(
+      plan.legs.map((leg) => `${leg.from}->${leg.to}`),
+      ['Porto->Dubai', 'Dubai->Lisbon', 'Lisbon->Porto']
+    );
   });
 
   it('adds departure dates to each leg for flight pricing', () => {
@@ -91,7 +108,8 @@ describe('travel optimizer', () => {
 
     assert.deepEqual(
       plan.legs.map((leg) => `${leg.from}->${leg.to}`),
-      ['Porto->Dubai', 'Dubai->Porto']
+      ['Porto->Dubai', 'Dubai->Lisbon', 'Lisbon->Porto']
     );
+    assert.equal(plan.legs.some((leg) => leg.from === leg.to), false);
   });
 });

@@ -7,6 +7,15 @@ const CITY_ALIASES = new Map([
   ['dxb', 'Dubai'],
   ['gdansk', 'Gdansk'],
   ['gdn', 'Gdansk'],
+  ['lisbon', 'Lisbon'],
+  ['lisboa', 'Lisbon'],
+  ['lis', 'Lisbon'],
+  ['istanbul', 'Istanbul'],
+  ['ist', 'Istanbul'],
+  ['belgrade', 'Belgrade'],
+  ['beg', 'Belgrade'],
+  ['warsaw', 'Warsaw'],
+  ['waw', 'Warsaw'],
   ['kaliningrad', 'Kaliningrad'],
   ['kgd', 'Kaliningrad'],
   ['moscow', 'Moscow'],
@@ -20,6 +29,10 @@ const CITY_COORDS = {
   Doha: [25.273, 51.608],
   Dubai: [25.253, 55.365],
   Gdansk: [54.377, 18.466],
+  Lisbon: [38.775, -9.135],
+  Istanbul: [41.275, 28.751],
+  Belgrade: [44.819, 20.309],
+  Warsaw: [52.167, 20.967],
   Kaliningrad: [54.89, 20.592],
   Moscow: [55.756, 37.617]
 };
@@ -35,8 +48,18 @@ const DIRECT_ROUTE_HINTS = new Map([
   ['Gdansk|Moscow', { hours: 6.8, reliability: 0.5, note: 'Flight from Gdansk after Kaliningrad ground transfer.' }],
   ['Kaliningrad|Moscow', { hours: 2.0, reliability: 0.68, note: 'Check current border and airspace constraints.' }],
   ['Moscow|Dubai', { hours: 5.6, reliability: 0.72, note: 'Common long-haul leg.' }],
+  ['Dubai|Lisbon', { hours: 8.2, reliability: 0.78, note: 'Common Europe return hub toward Porto.' }],
+  ['Lisbon|Porto', { hours: 1.0, reliability: 0.9, note: 'Short domestic hop; train may also be cheaper.' }],
+  ['Dubai|Istanbul', { hours: 4.8, reliability: 0.88, note: 'Major hub for Europe connections.' }],
+  ['Istanbul|Porto', { hours: 5.0, reliability: 0.72, note: 'Europe connection toward Porto.' }],
+  ['Dubai|Belgrade', { hours: 5.9, reliability: 0.68, note: 'Regional Europe connection option.' }],
+  ['Belgrade|Porto', { hours: 4.2, reliability: 0.58, note: 'Likely connection or seasonal availability.' }],
+  ['Dubai|Warsaw', { hours: 6.4, reliability: 0.72, note: 'Central Europe connection option.' }],
+  ['Warsaw|Porto', { hours: 4.1, reliability: 0.7, note: 'Europe connection toward Porto.' }],
   ['Doha|Porto', { hours: 8.4, reliability: 0.74, note: 'Usually one stop back to Porto.' }]
 ]);
+
+const RETURN_HUBS = ['Lisbon', 'Istanbul', 'Warsaw', 'Belgrade'];
 
 export function normalizeCity(value) {
   const key = String(value || '').trim().toLowerCase();
@@ -135,7 +158,7 @@ function nearestNeighbor(origin, stops) {
 }
 
 function buildItinerary(origin, stops, startDate) {
-  const route = collapseConsecutiveDuplicates(expandRouteForTransfers([origin, ...stops, origin]));
+  const route = collapseConsecutiveDuplicates(expandRouteForTransfers(expandReturnHubs([origin, ...stops, origin])));
   const legs = [];
   let cursor = new Date(startDate);
   let totalHours = 0;
@@ -164,6 +187,42 @@ function buildItinerary(origin, stops, startDate) {
   }
 
   return { legs, totalHours, totalDistanceKm };
+}
+
+function expandReturnHubs(route) {
+  const expanded = [];
+  for (let index = 0; index < route.length - 1; index += 1) {
+    const from = route[index];
+    const to = route[index + 1];
+    expanded.push(from);
+    if (from !== to && to === route[0] && shouldUseReturnHub(from, to)) {
+      expanded.push(selectReturnHub(from, to));
+    }
+  }
+  expanded.push(route[route.length - 1]);
+  return expanded;
+}
+
+function shouldUseReturnHub(from, to) {
+  if (from === 'Kaliningrad') return false;
+  const direct = routeEstimate(from, to);
+  const viaHub = selectReturnHub(from, to);
+  const hubEstimate = routeEstimate(from, viaHub).hours + routeEstimate(viaHub, to).hours;
+  return hubEstimate + 1 < direct.hours || from === 'Dubai';
+}
+
+function selectReturnHub(from, to) {
+  let bestHub = RETURN_HUBS[0];
+  let bestHours = Number.POSITIVE_INFINITY;
+  for (const hub of RETURN_HUBS) {
+    if (hub === from || hub === to) continue;
+    const hours = routeEstimate(from, hub).hours + routeEstimate(hub, to).hours;
+    if (hours < bestHours) {
+      bestHours = hours;
+      bestHub = hub;
+    }
+  }
+  return bestHub;
 }
 
 function collapseConsecutiveDuplicates(route) {
