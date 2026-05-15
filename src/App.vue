@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 const cityOptions = ['Porto', 'Doha', 'Dubai', 'Kaliningrad', 'Moscow'];
 const requirementOptions = [
@@ -24,6 +24,7 @@ const pricingLoading = ref(false);
 const error = ref('');
 const plan = ref(null);
 const priceQuote = ref(null);
+let optimizeDebounce = null;
 
 const routeLabel = computed(() => {
   if (!plan.value) return '';
@@ -54,6 +55,7 @@ function addStop() {
 function removeStop(id) {
   if (stops.value.length === 1) return;
   stops.value = stops.value.filter((stop) => stop.id !== id);
+  scheduleOptimize();
 }
 
 function buildRequirements() {
@@ -67,6 +69,7 @@ function buildRequirements() {
 }
 
 async function optimize() {
+  clearTimeout(optimizeDebounce);
   loading.value = true;
   error.value = '';
   priceQuote.value = null;
@@ -92,6 +95,14 @@ async function optimize() {
   } finally {
     loading.value = false;
   }
+}
+
+function scheduleOptimize() {
+  clearTimeout(optimizeDebounce);
+  priceQuote.value = null;
+  optimizeDebounce = setTimeout(() => {
+    optimize();
+  }, 350);
 }
 
 async function fetchPrices(routePlan = plan.value) {
@@ -137,6 +148,14 @@ function legPriceError(index) {
   if (leg?.mode === 'bus') return 'Ground transfer: check bus ticket and border requirements separately.';
   return priceQuote.value?.legs?.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.error || null;
 }
+
+watch(
+  [origin, stops, startDate, lockOrder],
+  () => {
+    scheduleOptimize();
+  },
+  { deep: true }
+);
 
 optimize();
 </script>
