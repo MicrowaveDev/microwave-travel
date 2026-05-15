@@ -1,7 +1,27 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 
-const cityOptions = ['Porto', 'Doha', 'Dubai', 'Kaliningrad', 'Moscow', 'Lisbon', 'Istanbul', 'Warsaw', 'Belgrade'];
+const cityOptions = [
+  'Porto',
+  'Doha',
+  'Dubai',
+  'Kaliningrad',
+  'Moscow',
+  'Lisbon',
+  'Istanbul',
+  'Madrid',
+  'Barcelona',
+  'Milan',
+  'Rome',
+  'Paris',
+  'Frankfurt',
+  'Warsaw',
+  'Belgrade',
+  'Athens',
+  'Vienna',
+  'Zurich',
+  'Amsterdam'
+];
 const requirementOptions = [
   { value: '', label: 'No date rule' },
   { value: 'before', label: 'Visit before' },
@@ -121,6 +141,14 @@ async function fetchPrices(routePlan = plan.value) {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Could not fetch flight prices.');
     priceQuote.value = payload;
+    if (payload.optimizedRouteLegs?.length) {
+      plan.value = {
+        ...routePlan,
+        legs: payload.optimizedRouteLegs,
+        totalHours: Math.round(payload.optimizedRouteLegs.reduce((sum, leg) => sum + leg.hours, 0) * 10) / 10,
+        totalDistanceKm: Math.round(payload.optimizedRouteLegs.reduce((sum, leg) => sum + leg.distanceKm, 0))
+      };
+    }
   } catch (caught) {
     priceQuote.value = {
       provider: null,

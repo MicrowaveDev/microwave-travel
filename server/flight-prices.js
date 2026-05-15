@@ -1,3 +1,5 @@
+import { buildLegsForRoute } from './optimizer.js';
+
 const CITY_IATA_CODES = new Map([
   ['porto', 'OPO'],
   ['doha', 'DOH'],
@@ -7,6 +9,16 @@ const CITY_IATA_CODES = new Map([
   ['istanbul', 'IST'],
   ['belgrade', 'BEG'],
   ['warsaw', 'WAW'],
+  ['madrid', 'MAD'],
+  ['barcelona', 'BCN'],
+  ['milan', 'MIL'],
+  ['rome', 'ROM'],
+  ['paris', 'PAR'],
+  ['frankfurt', 'FRA'],
+  ['athens', 'ATH'],
+  ['vienna', 'VIE'],
+  ['zurich', 'ZRH'],
+  ['amsterdam', 'AMS'],
   ['kaliningrad', 'KGD'],
   ['moscow', 'MOW'],
   ['moskow', 'MOW']
@@ -14,6 +26,24 @@ const CITY_IATA_CODES = new Map([
 
 const RUSSIAN_CITY_NAMES = new Set(['Kaliningrad', 'Moscow']);
 const RUSSIAN_IATA_CODES = new Set(['KGD', 'MOW', 'SVO', 'DME', 'VKO']);
+const PORTO_DUBAI_TRANSFER_HUBS = [
+  'Doha',
+  'Istanbul',
+  'Lisbon',
+  'Madrid',
+  'Barcelona',
+  'Milan',
+  'Rome',
+  'Paris',
+  'Frankfurt',
+  'Warsaw',
+  'Belgrade',
+  'Athens',
+  'Vienna',
+  'Zurich',
+  'Amsterdam'
+];
+const POPULAR_ROUTE_SEARCH_DAYS = Number(process.env.POPULAR_ROUTE_SEARCH_DAYS || 4);
 const LEG_QUOTE_CACHE_TTL_MS = 60 * 60 * 1000;
 const legQuoteCache = new Map();
 let amadeusTokenCache = null;
@@ -24,6 +54,16 @@ export async function quoteFlightPrices(input) {
     throw new Error('Optimize a route before fetching prices.');
   }
 
+  const quoted = await quoteNormalizedLegs(legs);
+  const quote = normalizeQuote('mixed', quoted.legs, quoted.attempts);
+  return (await optimizePopularTransferRoute(input.legs, quote)) || quote;
+}
+
+export function clearFlightPriceCache() {
+  legQuoteCache.clear();
+}
+
+async function quoteNormalizedLegs(legs) {
   const quotedLegs = [];
   const attempts = [];
 
@@ -33,11 +73,130 @@ export async function quoteFlightPrices(input) {
     attempts.push(...result.attempts);
   }
 
-  return normalizeQuote('mixed', quotedLegs, attempts);
+  return { legs: quotedLegs, attempts };
 }
 
-export function clearFlightPriceCache() {
-  legQuoteCache.clear();
+async function optimizePopularTransferRoute(originalLegs, initialQuote) {
+  if (!Array.isArray(originalLegs)) return null;
+
+  const optimizationTarget = findPopularRouteTarget(originalLegs);
+  if (!optimizationTarget) return null;
+
+  const { startIndex, endIndex = originalLegs.length, direction } = optimizationTarget;
+  const currentSuffix = originalLegs.slice(startIndex, endIndex);
+  if (!isReplaceablePopularRoute(currentSuffix, direction)) return null;
+
+  const currentSuffixQuote = quoteTotalForDisplayLegs(currentSuffix, initialQuote.legs);
+  let best = null;
+
+  for (const route of popularTransferRoutes(direction)) {
+    for (const departureDate of dateWindow(currentSuffix[0].departOn, POPULAR_ROUTE_SEARCH_DAYS)) {
+      const candidateDisplayLegs = buildLegsForRoute(route, departureDate);
+      const candidateNormalizedLegs = normalizeLegs(candidateDisplayLegs);
+      const candidateQuoted = await quoteNormalizedLegs(candidateNormalizedLegs);
+      const candidateQuote = normalizeQuote('mixed', candidateQuoted.legs, candidateQuoted.attempts);
+      if (!Number.isFinite(candidateQuote.totalAmount)) continue;
+
+      if (!best || candidateQuote.totalAmount < best.quote.totalAmount) {
+        best = {
+          route,
+          departureDate,
+          displayLegs: candidateDisplayLegs,
+          quote: candidateQuote
+        };
+      }
+    }
+  }
+
+  if (!best || (Number.isFinite(currentSuffixQuote) && best.quote.totalAmount >= currentSuffixQuote)) {
+    return null;
+  }
+
+  const prefixDisplayLegs = originalLegs.slice(0, startIndex);
+  const tailDisplayLegs = originalLegs.slice(endIndex);
+  const prefixQuoteLegs = initialQuote.legs.filter((quotedLeg) =>
+    prefixDisplayLegs.some((displayLeg) => sameDisplayLeg(displayLeg, quotedLeg))
+  );
+  const tailQuoteLegs = initialQuote.legs.filter((quotedLeg) =>
+    tailDisplayLegs.some((displayLeg) => sameDisplayLeg(displayLeg, quotedLeg))
+  );
+  const optimizedLegs = [...prefixQuoteLegs, ...best.quote.legs, ...tailQuoteLegs];
+  const combinedQuote = normalizeQuote('mixed', optimizedLegs, [
+    ...initialQuote.attempts,
+    ...best.quote.attempts.map((attempt) => ({ ...attempt, optimizedCandidate: true }))
+  ]);
+  combinedQuote.optimizedRouteLegs = [...prefixDisplayLegs, ...best.displayLegs, ...tailDisplayLegs];
+  combinedQuote.optimization = {
+    reason: `Found a cheaper priced ${direction.from} to ${direction.to} option.`,
+    replacedRoute: currentSuffix.map((leg) => leg.from).concat(currentSuffix.at(-1).to),
+    selectedRoute: best.route,
+    departureDate: best.departureDate,
+    previousReturnAmount: currentSuffixQuote,
+    selectedReturnAmount: best.quote.totalAmount
+  };
+  combinedQuote.message = `${combinedQuote.message} Optimized ${direction.from} to ${direction.to} via ${best.route.slice(1, -1).join(' / ') || 'direct'} on ${best.departureDate}.`;
+  return combinedQuote;
+}
+
+function findPopularRouteTarget(legs) {
+  const lastCity = legs.at(-1)?.to;
+  const dubaiToPortoIndex = legs.findIndex((leg) => leg.from === 'Dubai' && lastCity === 'Porto');
+  if (dubaiToPortoIndex !== -1) {
+    return { startIndex: dubaiToPortoIndex, direction: { from: 'Dubai', to: 'Porto' } };
+  }
+
+  const portoToDubaiIndex = legs.findIndex((leg) => leg.from === 'Porto' && routeEventuallyReaches(legs, 'Dubai'));
+  if (portoToDubaiIndex !== -1) {
+    const targetIndex = legs.findIndex((leg, index) => index >= portoToDubaiIndex && leg.to === 'Dubai');
+    return { startIndex: portoToDubaiIndex, direction: { from: 'Porto', to: 'Dubai' }, endIndex: targetIndex + 1 };
+  }
+
+  return null;
+}
+
+function routeEventuallyReaches(legs, city) {
+  return legs.some((leg) => leg.to === city);
+}
+
+function isReplaceablePopularRoute(legs, direction) {
+  const cities = new Set(legs.flatMap((leg) => [leg.from, leg.to]));
+  for (const city of cities) {
+    if (![direction.from, direction.to, ...PORTO_DUBAI_TRANSFER_HUBS].includes(city)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function popularTransferRoutes(direction) {
+  return [
+    [direction.from, direction.to],
+    ...PORTO_DUBAI_TRANSFER_HUBS.map((hub) => [direction.from, hub, direction.to])
+  ];
+}
+
+function quoteTotalForDisplayLegs(displayLegs, quoteLegs) {
+  let total = 0;
+  for (const displayLeg of displayLegs) {
+    if (displayLeg.mode === 'bus') continue;
+    const quote = quoteLegs.find((quotedLeg) => sameDisplayLeg(displayLeg, quotedLeg));
+    if (!Number.isFinite(quote?.amount)) return null;
+    total += quote.amount;
+  }
+  return roundMoney(total);
+}
+
+function sameDisplayLeg(displayLeg, quotedLeg) {
+  return displayLeg.from === quotedLeg.from && displayLeg.to === quotedLeg.to && displayLeg.departOn === quotedLeg.departureDate;
+}
+
+function dateWindow(startDate, days) {
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  return Array.from({ length: days }, (_, index) => {
+    const date = new Date(start);
+    date.setUTCDate(date.getUTCDate() + index);
+    return date.toISOString().slice(0, 10);
+  });
 }
 
 async function tryProvider(name, fn) {

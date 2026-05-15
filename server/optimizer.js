@@ -16,6 +16,26 @@ const CITY_ALIASES = new Map([
   ['beg', 'Belgrade'],
   ['warsaw', 'Warsaw'],
   ['waw', 'Warsaw'],
+  ['madrid', 'Madrid'],
+  ['mad', 'Madrid'],
+  ['barcelona', 'Barcelona'],
+  ['bcn', 'Barcelona'],
+  ['milan', 'Milan'],
+  ['mil', 'Milan'],
+  ['rome', 'Rome'],
+  ['rom', 'Rome'],
+  ['paris', 'Paris'],
+  ['par', 'Paris'],
+  ['frankfurt', 'Frankfurt'],
+  ['fra', 'Frankfurt'],
+  ['athens', 'Athens'],
+  ['ath', 'Athens'],
+  ['vienna', 'Vienna'],
+  ['vie', 'Vienna'],
+  ['zurich', 'Zurich'],
+  ['zrh', 'Zurich'],
+  ['amsterdam', 'Amsterdam'],
+  ['ams', 'Amsterdam'],
   ['kaliningrad', 'Kaliningrad'],
   ['kgd', 'Kaliningrad'],
   ['moscow', 'Moscow'],
@@ -33,6 +53,16 @@ const CITY_COORDS = {
   Istanbul: [41.275, 28.751],
   Belgrade: [44.819, 20.309],
   Warsaw: [52.167, 20.967],
+  Madrid: [40.472, -3.561],
+  Barcelona: [41.297, 2.083],
+  Milan: [45.63, 8.723],
+  Rome: [41.8, 12.238],
+  Paris: [49.009, 2.548],
+  Frankfurt: [50.037, 8.562],
+  Athens: [37.936, 23.948],
+  Vienna: [48.11, 16.57],
+  Zurich: [47.458, 8.555],
+  Amsterdam: [52.31, 4.768],
   Kaliningrad: [54.89, 20.592],
   Moscow: [55.756, 37.617]
 };
@@ -56,6 +86,26 @@ const DIRECT_ROUTE_HINTS = new Map([
   ['Belgrade|Porto', { hours: 4.2, reliability: 0.58, note: 'Likely connection or seasonal availability.' }],
   ['Dubai|Warsaw', { hours: 6.4, reliability: 0.72, note: 'Central Europe connection option.' }],
   ['Warsaw|Porto', { hours: 4.1, reliability: 0.7, note: 'Europe connection toward Porto.' }],
+  ['Dubai|Madrid', { hours: 7.7, reliability: 0.78, note: 'Popular Europe connection option.' }],
+  ['Madrid|Porto', { hours: 1.3, reliability: 0.88, note: 'Short Iberia connection toward Porto.' }],
+  ['Dubai|Barcelona', { hours: 7.4, reliability: 0.78, note: 'Popular Europe connection option.' }],
+  ['Barcelona|Porto', { hours: 1.8, reliability: 0.82, note: 'Iberia connection toward Porto.' }],
+  ['Dubai|Milan', { hours: 6.7, reliability: 0.76, note: 'Popular Europe connection option.' }],
+  ['Milan|Porto', { hours: 2.7, reliability: 0.72, note: 'Europe connection toward Porto.' }],
+  ['Dubai|Rome', { hours: 6.3, reliability: 0.76, note: 'Popular Europe connection option.' }],
+  ['Rome|Porto', { hours: 3.0, reliability: 0.7, note: 'Europe connection toward Porto.' }],
+  ['Dubai|Paris', { hours: 7.2, reliability: 0.82, note: 'Major Europe connection option.' }],
+  ['Paris|Porto', { hours: 2.2, reliability: 0.84, note: 'Europe connection toward Porto.' }],
+  ['Dubai|Frankfurt', { hours: 6.9, reliability: 0.84, note: 'Major Europe connection option.' }],
+  ['Frankfurt|Porto', { hours: 2.8, reliability: 0.82, note: 'Europe connection toward Porto.' }],
+  ['Dubai|Athens', { hours: 5.2, reliability: 0.72, note: 'Regional Europe connection option.' }],
+  ['Athens|Porto', { hours: 4.0, reliability: 0.62, note: 'Europe connection toward Porto.' }],
+  ['Dubai|Vienna', { hours: 6.2, reliability: 0.78, note: 'Central Europe connection option.' }],
+  ['Vienna|Porto', { hours: 3.4, reliability: 0.74, note: 'Europe connection toward Porto.' }],
+  ['Dubai|Zurich', { hours: 6.8, reliability: 0.82, note: 'Major Europe connection option.' }],
+  ['Zurich|Porto', { hours: 2.6, reliability: 0.82, note: 'Europe connection toward Porto.' }],
+  ['Dubai|Amsterdam', { hours: 7.2, reliability: 0.82, note: 'Major Europe connection option.' }],
+  ['Amsterdam|Porto', { hours: 2.8, reliability: 0.82, note: 'Europe connection toward Porto.' }],
   ['Doha|Porto', { hours: 8.4, reliability: 0.74, note: 'Usually one stop back to Porto.' }]
 ]);
 
@@ -159,6 +209,14 @@ function nearestNeighbor(origin, stops) {
 
 function buildItinerary(origin, stops, startDate) {
   const route = collapseConsecutiveDuplicates(expandRouteForTransfers(expandReturnHubs([origin, ...stops, origin])));
+  return buildItineraryFromRoute(route, startDate);
+}
+
+export function buildLegsForRoute(route, startDate) {
+  return buildItineraryFromRoute(route, startDate).legs;
+}
+
+function buildItineraryFromRoute(route, startDate) {
   const legs = [];
   let cursor = new Date(startDate);
   let totalHours = 0;
@@ -255,6 +313,10 @@ function routeEstimate(from, to) {
   const distanceKm = haversineKm(CITY_COORDS[from], CITY_COORDS[to]);
   if (direct) {
     return { mode: 'flight', ...direct, distanceKm };
+  }
+  const reverse = DIRECT_ROUTE_HINTS.get(`${to}|${from}`);
+  if (reverse) {
+    return { mode: 'flight', ...reverse, distanceKm, note: reverse.note.replace('toward Porto', 'toward Dubai') };
   }
   const connectionPenalty = distanceKm > 3500 ? 3.2 : 1.6;
   return {
