@@ -261,6 +261,46 @@ button:disabled {
   line-height: 1.55;
 }
 
+.route-segments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: #173733;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.route-city {
+  font-size: 1rem;
+}
+
+.route-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #607178;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.route-time::before,
+.route-time::after {
+  display: block;
+  width: 16px;
+  height: 2px;
+  border-radius: 999px;
+  background: #7e9290;
+  content: "";
+}
+
+.route-time span {
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: #0f5d57;
+  background: #dcefed;
+}
+
 .warning-list {
   display: grid;
   gap: 10px;

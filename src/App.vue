@@ -61,6 +61,8 @@ const routeLabel = computed(() => {
   return [plan.value.origin, ...plan.value.stops, plan.value.returnsTo].join(' -> ');
 });
 
+const routeSegments = computed(() => plan.value?.legs || []);
+
 const priceLabel = computed(() => {
   if (pricingLoading.value) return 'Loading';
   if (!priceQuote.value) return 'No price';
@@ -533,7 +535,16 @@ optimize();
       </div>
 
       <div v-if="plan" class="route-map">
-        <p>{{ routeLabel }}</p>
+        <div v-if="routeSegments.length" class="route-segments" :aria-label="routeLabel">
+          <template v-for="(leg, index) in routeSegments" :key="`${leg.from}-${leg.to}-${index}`">
+            <span class="route-city">{{ leg.from }}</span>
+            <span class="route-time">
+              <span>{{ leg.hours }}h</span>
+            </span>
+            <span v-if="index === routeSegments.length - 1" class="route-city">{{ leg.to }}</span>
+          </template>
+        </div>
+        <p v-else>{{ routeLabel }}</p>
       </div>
 
       <div v-if="priceQuote || pricingLoading" class="price-panel">
