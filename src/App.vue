@@ -45,10 +45,12 @@ const error = ref('');
 const plan = ref(null);
 const priceQuote = ref(null);
 const priceProgress = ref([]);
+const inputChangeLog = ref([]);
 const copyLogStatus = ref('');
 let optimizeDebounce = null;
 let priceRequestId = 0;
 let pricingAbortController = null;
+let lastInputSnapshot = snapshotTripInput();
 
 const routeLabel = computed(() => {
   if (!plan.value) return '';
@@ -90,6 +92,103 @@ function removeStop(id) {
   if (stops.value.length === 1) return;
   stops.value = stops.value.filter((stop) => stop.id !== id);
   scheduleOptimize();
+}
+
+function snapshotTripInput() {
+  return {
+    origin: origin.value,
+    startDate: startDate.value,
+    lockOrder: lockOrder.value,
+    stops: stops.value.map((stop, index) => ({
+      id: stop.id,
+      index,
+      city: stop.city,
+      rule: stop.rule,
+      date: stop.date
+    }))
+  };
+}
+
+function trackTripInputChanges() {
+  const nextSnapshot = snapshotTripInput();
+  for (const change of describeTripInputChanges(lastInputSnapshot, nextSnapshot)) {
+    appendInputChange(change);
+  }
+  lastInputSnapshot = nextSnapshot;
+}
+
+function describeTripInputChanges(previous, next) {
+  const changes = [];
+  if (!previous) return changes;
+
+  if (previous.origin !== next.origin) {
+    changes.push(`Start/return city changed from ${previous.origin || 'empty'} to ${next.origin || 'empty'}.`);
+  }
+  if (previous.startDate !== next.startDate) {
+    changes.push(`Trip start changed from ${previous.startDate || 'empty'} to ${next.startDate || 'empty'}.`);
+  }
+  if (previous.lockOrder !== next.lockOrder) {
+    changes.push(`Lock-order setting changed to ${next.lockOrder ? 'enabled' : 'disabled'}.`);
+  }
+
+  const previousById = new Map(previous.stops.map((stop) => [stop.id, stop]));
+  const nextById = new Map(next.stops.map((stop) => [stop.id, stop]));
+
+  for (const stop of next.stops) {
+    const before = previousById.get(stop.id);
+    if (!before) {
+      changes.push(`Stop ${stop.index + 1} added: ${formatStopForLog(stop)}.`);
+      continue;
+    }
+    if (before.index !== stop.index) {
+      changes.push(`${formatStopLabel(stop)} moved from row ${before.index + 1} to row ${stop.index + 1}.`);
+    }
+    if (before.city !== stop.city) {
+      changes.push(`Stop ${stop.index + 1} city changed from ${before.city || 'empty'} to ${stop.city || 'empty'}.`);
+    }
+    if (before.rule !== stop.rule) {
+      changes.push(`${formatStopLabel(stop)} requirement changed from ${requirementLabel(before.rule)} to ${requirementLabel(stop.rule)}.`);
+    }
+    if (before.date !== stop.date) {
+      changes.push(`${formatStopLabel(stop)} date changed from ${before.date || 'empty'} to ${stop.date || 'empty'}.`);
+    }
+  }
+
+  for (const stop of previous.stops) {
+    if (!nextById.has(stop.id)) {
+      changes.push(`Stop ${stop.index + 1} removed: ${formatStopForLog(stop)}.`);
+    }
+  }
+
+  return changes;
+}
+
+function appendInputChange(message) {
+  inputChangeLog.value = [
+    ...inputChangeLog.value,
+    {
+      at: new Date().toISOString(),
+      message,
+      stops: stops.value.map((stop) => ({
+        city: stop.city,
+        rule: stop.rule,
+        date: stop.date
+      }))
+    }
+  ];
+}
+
+function formatStopLabel(stop) {
+  return `Stop ${stop.index + 1} (${stop.city || 'empty'})`;
+}
+
+function formatStopForLog(stop) {
+  const requirement = stop.rule ? `, ${requirementLabel(stop.rule)} ${stop.date || 'without date'}` : '';
+  return `${stop.city || 'empty'}${requirement}`;
+}
+
+function requirementLabel(value) {
+  return requirementOptions.find((option) => option.value === value)?.label || 'No date rule';
 }
 
 function buildRequirements() {
@@ -261,6 +360,11 @@ function buildPricingLog() {
     `Start date: ${startDate.value}`,
     `Lock order: ${lockOrder.value ? 'yes' : 'no'}`,
     '',
+    `Input change events (${inputChangeLog.value.length}):`,
+    ...(inputChangeLog.value.length
+      ? inputChangeLog.value.map((event, index) => `${index + 1}. [${event.at}] ${event.message} | stops now: ${event.stops.map(formatStopSnapshot).join(' -> ')}`)
+      : ['No user input changes recorded since page load.']),
+    '',
     'Current displayed route:',
     routePlan?.legs?.length
       ? routePlan.legs.map((leg, index) => `${index + 1}. ${leg.from} -> ${leg.to} | ${leg.mode} | depart ${leg.departOn} | arrive ${leg.arriveBy} | ${leg.hours}h | ${leg.distanceKm} km`).join('\n')
@@ -296,6 +400,11 @@ function formatProgressEvent(event, index) {
   return `${index + 1}. [${event.at || 'no-time'}] ${event.step}: ${event.message}${details}`;
 }
 
+function formatStopSnapshot(stop) {
+  const rule = stop.rule ? ` (${requirementLabel(stop.rule)} ${stop.date || 'no date'})` : '';
+  return `${stop.city || 'empty'}${rule}`;
+}
+
 function copyLogWithFallback(text) {
   const textarea = document.createElement('textarea');
   textarea.value = text;
@@ -328,6 +437,7 @@ function legPriceError(index) {
 watch(
   [origin, stops, startDate, lockOrder],
   () => {
+    trackTripInputChanges();
     scheduleOptimize();
   },
   { deep: true }
