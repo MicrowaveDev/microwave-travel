@@ -127,6 +127,11 @@ function legPrice(index) {
   return typeof price === 'number' ? `$${price.toLocaleString()}` : null;
 }
 
+function legProvider(index) {
+  const leg = plan.value?.legs?.[index];
+  return priceQuote.value?.legs?.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.provider || null;
+}
+
 function legPriceError(index) {
   const leg = plan.value?.legs?.[index];
   if (leg?.mode === 'bus') return 'Ground transfer: check bus ticket and border requirements separately.';
@@ -247,7 +252,9 @@ optimize();
               {{ leg.departOn }} · {{ leg.mode }} · {{ leg.hours }}h · {{ leg.distanceKm.toLocaleString() }} km · arrive by
               {{ leg.arriveBy }}
             </p>
-            <p v-if="legPrice(index)" class="leg-price">{{ legPrice(index) }} USD</p>
+            <p v-if="legPrice(index)" class="leg-price">
+              {{ legPrice(index) }} USD<span v-if="legProvider(index)"> via {{ legProvider(index) }}</span>
+            </p>
             <p v-else-if="legPriceError(index)" class="leg-price-missing">{{ legPriceError(index) }}</p>
             <small>{{ leg.note }} Reliability {{ Math.round(leg.reliability * 100) }}%.</small>
           </div>

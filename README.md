@@ -27,6 +27,10 @@ AMADEUS_BASE_URL=https://test.api.amadeus.com
 
 # Optional fallback
 SERPAPI_KEY=...
+
+# Russian/CIS flight fallback and schedule fallback
+TRAVELPAYOUTS_TOKEN=...
+YANDEX_RASP_API_KEY=...
 ```
 
 If no keys are configured, the app still optimizes routes, but the price panel will show that provider credentials are needed.
