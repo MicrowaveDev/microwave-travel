@@ -27,6 +27,21 @@ describe('travel optimizer', () => {
     assert.equal(plan.warnings.length, 0);
   });
 
+  it('supports leaving Dubai before a date', () => {
+    const plan = optimizeTrip({
+      origin: 'porto',
+      stops: ['kaliningrad', 'moscow', 'dubai'],
+      requirements: [{ city: 'dubai', type: 'departBefore', date: '2026-06-01' }],
+      startDate: '2026-05-20',
+      lockOrder: true
+    });
+
+    const dubaiDeparture = plan.legs.find((leg) => leg.from === 'Dubai');
+    assert.ok(dubaiDeparture);
+    assert.ok(dubaiDeparture.departOn < '2026-06-01');
+    assert.equal(plan.warnings.length, 0);
+  });
+
   it('adds departure dates to each leg for flight pricing', () => {
     const plan = optimizeTrip({
       origin: 'porto',

@@ -223,7 +223,7 @@ function normalizeRequirements(requirements, legacyDeadline) {
     ? requirements
         .map((requirement) => ({
           city: normalizeCity(requirement.city),
-          type: requirement.type === 'after' ? 'after' : 'before',
+          type: normalizeRequirementType(requirement.type),
           date: parseDate(requirement.date)?.toISOString().slice(0, 10)
         }))
         .filter((requirement) => requirement.city && requirement.date)
@@ -239,12 +239,23 @@ function normalizeRequirements(requirements, legacyDeadline) {
 function validateRequirements(itinerary, requirements) {
   return requirements.flatMap((requirement) => {
     const firstArrival = itinerary.legs.find((leg) => leg.to === requirement.city);
+    const firstDeparture = itinerary.legs.find((leg) => leg.from === requirement.city);
     if (!firstArrival) {
       return [`${requirement.city} has a ${requirement.type} ${requirement.date} rule, but it is not in the route.`];
     }
 
-    const arrivalDate = new Date(`${firstArrival.arriveBy}T00:00:00.000Z`);
     const ruleDate = new Date(`${requirement.date}T00:00:00.000Z`);
+    if (requirement.type === 'departBefore') {
+      if (!firstDeparture) {
+        return [`${requirement.city} has a leave-before ${requirement.date} rule, but there is no departure from that city.`];
+      }
+      const departDate = new Date(`${firstDeparture.departOn}T00:00:00.000Z`);
+      return departDate < ruleDate
+        ? []
+        : [`${requirement.city} departs on ${firstDeparture.departOn}, missing the leave-before-${requirement.date} rule.`];
+    }
+
+    const arrivalDate = new Date(`${firstArrival.arriveBy}T00:00:00.000Z`);
     if (requirement.type === 'after') {
       return arrivalDate > ruleDate
         ? []
@@ -254,6 +265,12 @@ function validateRequirements(itinerary, requirements) {
       ? []
       : [`${requirement.city} arrives on ${firstArrival.arriveBy}, missing the before-${requirement.date} rule.`];
   });
+}
+
+function normalizeRequirementType(type) {
+  if (type === 'after') return 'after';
+  if (type === 'departBefore') return 'departBefore';
+  return 'before';
 }
 
 function uniquePermutations(items) {

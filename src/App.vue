@@ -5,13 +5,14 @@ const cityOptions = ['Porto', 'Doha', 'Dubai', 'Kaliningrad', 'Moscow'];
 const requirementOptions = [
   { value: '', label: 'No date rule' },
   { value: 'before', label: 'Arrive before' },
-  { value: 'after', label: 'Arrive after' }
+  { value: 'after', label: 'Arrive after' },
+  { value: 'departBefore', label: 'Leave before' }
 ];
 
 const origin = ref('Porto');
 const stops = ref([
   createStop('Doha'),
-  createStop('Dubai', 'before', '2026-06-01'),
+  createStop('Dubai', 'departBefore', '2026-06-01'),
   createStop('Kaliningrad'),
   createStop('Moscow'),
   createStop('Dubai'),
