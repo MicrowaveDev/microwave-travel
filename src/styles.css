@@ -110,7 +110,7 @@ input:disabled {
 
 .route-header {
   display: grid;
-  grid-template-columns: 24px minmax(96px, 1fr) 136px 72px 30px;
+  grid-template-columns: 42px minmax(96px, 1fr) 136px 72px 30px;
   gap: 6px;
   align-items: center;
 }
@@ -122,13 +122,9 @@ input:disabled {
   text-transform: uppercase;
 }
 
-.route-header span:first-child {
-  grid-column: 2;
-}
-
 .stop-row {
   display: grid;
-  grid-template-columns: 24px minmax(96px, 1fr) 136px 72px 30px;
+  grid-template-columns: 42px minmax(96px, 1fr) 136px 72px 30px;
   gap: 6px;
   align-items: center;
   padding: 6px;
@@ -137,16 +133,28 @@ input:disabled {
   background: #fbfdfc;
 }
 
-.stop-number {
+.move-buttons {
   display: grid;
-  width: 24px;
-  height: 24px;
+  grid-template-columns: repeat(2, 18px);
+  gap: 3px;
+}
+
+.move-buttons button {
+  display: grid;
+  width: 18px;
+  min-height: 28px;
   place-items: center;
-  border-radius: 50%;
-  color: #ffffff;
-  background: #607178;
+  border: 1px solid #bfd0ce;
+  padding: 0;
+  color: #0f5d57;
+  background: #edf7f5;
   font-size: 0.78rem;
-  font-weight: 900;
+  line-height: 1;
+}
+
+.move-buttons button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
 }
 
 .stop-row input,

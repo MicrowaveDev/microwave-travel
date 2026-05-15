@@ -151,6 +151,16 @@ function removeStop(id) {
   scheduleOptimize();
 }
 
+function moveStop(index, direction) {
+  const nextIndex = index + direction;
+  if (nextIndex < 0 || nextIndex >= stops.value.length) return;
+  const nextStops = [...stops.value];
+  [nextStops[index], nextStops[nextIndex]] = [nextStops[nextIndex], nextStops[index]];
+  stops.value = nextStops;
+  lockOrder.value = true;
+  scheduleOptimize();
+}
+
 function snapshotTripInput() {
   return {
     origin: origin.value,
@@ -520,6 +530,7 @@ optimize();
 
       <div class="route-editor">
         <div class="route-header">
+          <span>Move</span>
           <span>Stops</span>
           <span>Visit before</span>
           <span>Days</span>
@@ -527,7 +538,14 @@ optimize();
         </div>
 
         <div v-for="(stop, index) in stops" :key="stop.id" class="stop-row">
-          <span class="stop-number">{{ index + 1 }}</span>
+          <div class="move-buttons">
+            <button type="button" :disabled="index === 0" :aria-label="`Move ${stop.city || `stop ${index + 1}`} up`" @click="moveStop(index, -1)">
+              ↑
+            </button>
+            <button type="button" :disabled="index === stops.length - 1" :aria-label="`Move ${stop.city || `stop ${index + 1}`} down`" @click="moveStop(index, 1)">
+              ↓
+            </button>
+          </div>
           <input v-model="stop.city" :aria-label="`Stop ${index + 1} city`" list="city-options" type="search" autocomplete="off" />
 
           <input v-model="stop.visitBefore" :aria-label="`Stop ${index + 1} visit before date`" type="date" />
