@@ -110,7 +110,7 @@ input:disabled {
 
 .route-header {
   display: grid;
-  grid-template-columns: 24px minmax(96px, 1fr) 116px 128px 30px;
+  grid-template-columns: 24px minmax(96px, 1fr) 136px 72px 30px;
   gap: 6px;
   align-items: center;
 }
@@ -128,7 +128,7 @@ input:disabled {
 
 .stop-row {
   display: grid;
-  grid-template-columns: 24px minmax(96px, 1fr) 116px 128px 30px;
+  grid-template-columns: 24px minmax(96px, 1fr) 136px 72px 30px;
   gap: 6px;
   align-items: center;
   padding: 6px;
@@ -480,6 +480,12 @@ h2 {
 .leg-price-missing {
   margin-top: 6px;
   color: #7a4a00;
+  font-weight: 800;
+}
+
+.leg-stay {
+  margin-top: 6px;
+  color: #0f5d57;
   font-weight: 800;
 }
 

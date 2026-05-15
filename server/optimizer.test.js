@@ -70,6 +70,23 @@ describe('travel optimizer', () => {
     assert.ok(plan.legs[0].arriveBy);
   });
 
+  it('adds days to spend before the next leg departs', () => {
+    const plan = optimizeTrip({
+      origin: 'porto',
+      stopDetails: [
+        { city: 'doha', stayDays: 3 },
+        { city: 'dubai', stayDays: 1 }
+      ],
+      startDate: '2026-05-20',
+      lockOrder: true
+    });
+
+    assert.equal(plan.legs[0].to, 'Doha');
+    assert.equal(plan.legs[0].stayDaysAfter, 3);
+    assert.equal(plan.legs[1].from, 'Doha');
+    assert.equal(plan.legs[1].departOn, '2026-05-23');
+  });
+
   it('routes Kaliningrad through Gdansk ground transfer', () => {
     const plan = optimizeTrip({
       origin: 'porto',

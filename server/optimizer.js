@@ -141,7 +141,8 @@ export function parseDeadline(text) {
 
 export function optimizeTrip(input) {
   const origin = normalizeCity(input.origin);
-  const stops = Array.isArray(input.stops) ? input.stops.map(normalizeCity).filter(Boolean) : parseStops(input.stopsText);
+  const stopEntries = normalizeStopEntries(input);
+  const stops = stopEntries.map((stop) => stop.city);
   const deadline = input.deadline?.city ? input.deadline : parseDeadline(input.requirementsText);
   const requirements = normalizeRequirements(input.requirements, deadline);
   const startDate = parseDate(input.startDate) || new Date();
@@ -154,8 +155,9 @@ export function optimizeTrip(input) {
     throw new Error('Add at least one stop.');
   }
 
-  const orderedStops = lockOrder ? stops : findBestStopOrder(origin, stops, requirements, startDate);
-  const itinerary = buildItinerary(origin, orderedStops, startDate);
+  const orderedStopEntries = lockOrder ? stopEntries : findBestStopOrder(origin, stopEntries, requirements, startDate);
+  const orderedStops = orderedStopEntries.map((stop) => stop.city);
+  const itinerary = buildItinerary(origin, orderedStopEntries, startDate);
   const warnings = validateRequirements(itinerary, requirements);
   const score = Math.max(0, Math.round(100 - itinerary.totalHours * 1.15 - warnings.length * 18));
 
@@ -168,8 +170,35 @@ export function optimizeTrip(input) {
     totalDistanceKm: Math.round(itinerary.totalDistanceKm),
     legs: itinerary.legs,
     warnings,
-    requirements
+    requirements,
+    stopDetails: orderedStopEntries.map((stop) => ({
+      city: stop.city,
+      stayDays: stop.stayDays
+    }))
   };
+}
+
+function normalizeStopEntries(input) {
+  if (Array.isArray(input.stopDetails)) {
+    return input.stopDetails
+      .map((stop) => ({
+        city: normalizeCity(stop.city),
+        stayDays: normalizeStayDays(stop.stayDays ?? stop.daysToSpend)
+      }))
+      .filter((stop) => stop.city);
+  }
+
+  const stops = Array.isArray(input.stops) ? input.stops.map(normalizeCity).filter(Boolean) : parseStops(input.stopsText);
+  return stops.map((city) => ({
+    city,
+    stayDays: 0
+  }));
+}
+
+function normalizeStayDays(value) {
+  const days = Number(value);
+  if (!Number.isFinite(days) || days < 0) return 0;
+  return Math.round(days * 10) / 10;
 }
 
 function findBestStopOrder(origin, stops, requirements, startDate) {
@@ -193,30 +222,49 @@ function nearestNeighbor(origin, stops) {
   let current = origin;
   while (remaining.length) {
     let bestIndex = 0;
-    let bestLeg = routeEstimate(current, remaining[0]);
+    let bestLeg = routeEstimate(current, remaining[0].city);
     for (let index = 1; index < remaining.length; index += 1) {
-      const leg = routeEstimate(current, remaining[index]);
+      const leg = routeEstimate(current, remaining[index].city);
       if (leg.hours < bestLeg.hours) {
         bestIndex = index;
         bestLeg = leg;
       }
     }
-    current = remaining.splice(bestIndex, 1)[0];
-    route.push(current);
+    const next = remaining.splice(bestIndex, 1)[0];
+    current = next.city;
+    route.push(next);
   }
   return route;
 }
 
+function buildStayQueue(stops) {
+  const queue = new Map();
+  for (const stop of stops) {
+    const hours = round1(stop.stayDays * 24);
+    if (!hours) continue;
+    queue.set(stop.city, [...(queue.get(stop.city) || []), hours]);
+  }
+  return queue;
+}
+
+function takeStayHours(stayQueue, city) {
+  const queue = stayQueue.get(city);
+  if (!queue?.length) return 0;
+  const hours = queue.shift();
+  if (queue.length === 0) stayQueue.delete(city);
+  return hours;
+}
+
 function buildItinerary(origin, stops, startDate) {
-  const route = collapseConsecutiveDuplicates(expandRouteForTransfers(expandReturnHubs([origin, ...stops, origin])));
-  return buildItineraryFromRoute(route, startDate);
+  const route = collapseConsecutiveDuplicates(expandRouteForTransfers(expandReturnHubs([origin, ...stops.map((stop) => stop.city), origin])));
+  return buildItineraryFromRoute(route, startDate, buildStayQueue(stops));
 }
 
 export function buildLegsForRoute(route, startDate) {
   return buildItineraryFromRoute(route, startDate).legs;
 }
 
-function buildItineraryFromRoute(route, startDate) {
+function buildItineraryFromRoute(route, startDate, stayQueue = new Map()) {
   const legs = [];
   let cursor = new Date(startDate);
   let totalHours = 0;
@@ -230,6 +278,7 @@ function buildItineraryFromRoute(route, startDate) {
     cursor = addHours(cursor, estimate.hours);
     totalHours += estimate.hours;
     totalDistanceKm += estimate.distanceKm;
+    const stayHoursAfter = takeStayHours(stayQueue, to);
     legs.push({
       from,
       to,
@@ -239,9 +288,11 @@ function buildItineraryFromRoute(route, startDate) {
       distanceKm: Math.round(estimate.distanceKm),
       mode: estimate.mode,
       reliability: estimate.reliability,
-      note: estimate.note
+      note: estimate.note,
+      stayHoursAfter,
+      stayDaysAfter: round1(stayHoursAfter / 24)
     });
-    cursor = addHours(cursor, 18);
+    cursor = addHours(cursor, stayHoursAfter);
   }
 
   return { legs, totalHours, totalDistanceKm };

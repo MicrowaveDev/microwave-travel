@@ -22,20 +22,14 @@ const cityOptions = [
   'Zurich',
   'Amsterdam'
 ];
-const requirementOptions = [
-  { value: '', label: 'No date rule' },
-  { value: 'before', label: 'Visit before' },
-  { value: 'after', label: 'Visit after' }
-];
-
 const origin = ref('Porto');
 const stops = ref([
-  createStop('Doha'),
-  createStop('Dubai', 'before', '2026-06-01'),
-  createStop('Kaliningrad'),
-  createStop('Moscow'),
-  createStop('Dubai'),
-  createStop('Doha')
+  createStop('Doha', '', 1),
+  createStop('Dubai', '2026-06-01', 2),
+  createStop('Kaliningrad', '', 2),
+  createStop('Moscow', '', 2),
+  createStop('Dubai', '', 2),
+  createStop('Doha', '', 1)
 ]);
 const startDate = ref('2026-05-20');
 const lockOrder = ref(false);
@@ -78,12 +72,12 @@ const currentPriceStatus = computed(() => {
 
 const visiblePriceProgress = computed(() => priceProgress.value.slice(-8).reverse());
 
-function createStop(city = 'Doha', rule = '', date = '') {
+function createStop(city = 'Doha', visitBefore = '', stayDays = 1) {
   return {
     id: crypto.randomUUID(),
     city,
-    rule,
-    date
+    visitBefore,
+    stayDays
   };
 }
 
@@ -106,8 +100,8 @@ function snapshotTripInput() {
       id: stop.id,
       index,
       city: stop.city,
-      rule: stop.rule,
-      date: stop.date
+      visitBefore: stop.visitBefore,
+      stayDays: stop.stayDays
     }))
   };
 }
@@ -149,11 +143,11 @@ function describeTripInputChanges(previous, next) {
     if (before.city !== stop.city) {
       changes.push(`Stop ${stop.index + 1} city changed from ${before.city || 'empty'} to ${stop.city || 'empty'}.`);
     }
-    if (before.rule !== stop.rule) {
-      changes.push(`${formatStopLabel(stop)} requirement changed from ${requirementLabel(before.rule)} to ${requirementLabel(stop.rule)}.`);
+    if (before.visitBefore !== stop.visitBefore) {
+      changes.push(`${formatStopLabel(stop)} visit-before date changed from ${before.visitBefore || 'empty'} to ${stop.visitBefore || 'empty'}.`);
     }
-    if (before.date !== stop.date) {
-      changes.push(`${formatStopLabel(stop)} date changed from ${before.date || 'empty'} to ${stop.date || 'empty'}.`);
+    if (before.stayDays !== stop.stayDays) {
+      changes.push(`${formatStopLabel(stop)} days-to-spend changed from ${before.stayDays || 0} to ${stop.stayDays || 0}.`);
     }
   }
 
@@ -174,8 +168,8 @@ function appendInputChange(message) {
       message,
       stops: stops.value.map((stop) => ({
         city: stop.city,
-        rule: stop.rule,
-        date: stop.date
+        visitBefore: stop.visitBefore,
+        stayDays: stop.stayDays
       }))
     }
   ];
@@ -186,21 +180,17 @@ function formatStopLabel(stop) {
 }
 
 function formatStopForLog(stop) {
-  const requirement = stop.rule ? `, ${requirementLabel(stop.rule)} ${stop.date || 'without date'}` : '';
-  return `${stop.city || 'empty'}${requirement}`;
-}
-
-function requirementLabel(value) {
-  return requirementOptions.find((option) => option.value === value)?.label || 'No date rule';
+  const visitBefore = stop.visitBefore ? `, visit before ${stop.visitBefore}` : '';
+  return `${stop.city || 'empty'}${visitBefore}, spend ${stop.stayDays || 0} day${Number(stop.stayDays) === 1 ? '' : 's'}`;
 }
 
 function buildRequirements() {
   return stops.value
-    .filter((stop) => stop.rule && stop.date)
+    .filter((stop) => stop.visitBefore)
     .map((stop) => ({
       city: stop.city,
-      type: stop.rule,
-      date: stop.date
+      type: 'before',
+      date: stop.visitBefore
     }));
 }
 
@@ -219,6 +209,10 @@ async function optimize() {
       body: JSON.stringify({
         origin: origin.value,
         stops: stops.value.map((stop) => stop.city),
+        stopDetails: stops.value.map((stop) => ({
+          city: stop.city,
+          stayDays: Number(stop.stayDays) || 0
+        })),
         requirements: buildRequirements(),
         startDate: startDate.value,
         lockOrder: lockOrder.value
@@ -359,8 +353,8 @@ function buildPricingLog() {
     '',
     'Trip input:',
     `Origin/return: ${origin.value}`,
-    `Stops: ${stops.value.map((stop) => stop.city).join(' -> ')}`,
-    `Requirements: ${buildRequirements().map((item) => `${item.city} ${item.type} ${item.date}`).join('; ') || 'none'}`,
+    `Stops: ${stops.value.map((stop) => `${stop.city} (${Number(stop.stayDays) || 0}d)`).join(' -> ')}`,
+    `Visit-before dates: ${buildRequirements().map((item) => `${item.city} before ${item.date}`).join('; ') || 'none'}`,
     `Start date: ${startDate.value}`,
     `Lock order: ${lockOrder.value ? 'yes' : 'no'}`,
     '',
@@ -405,8 +399,8 @@ function formatProgressEvent(event, index) {
 }
 
 function formatStopSnapshot(stop) {
-  const rule = stop.rule ? ` (${requirementLabel(stop.rule)} ${stop.date || 'no date'})` : '';
-  return `${stop.city || 'empty'}${rule}`;
+  const visitBefore = stop.visitBefore ? `, before ${stop.visitBefore}` : '';
+  return `${stop.city || 'empty'} (${stop.stayDays || 0}d${visitBefore})`;
 }
 
 function copyLogWithFallback(text) {
@@ -466,8 +460,8 @@ optimize();
       <div class="route-editor">
         <div class="route-header">
           <span>Stops</span>
-          <span>Requirement</span>
-          <span>Date</span>
+          <span>Visit before</span>
+          <span>Days</span>
           <span></span>
         </div>
 
@@ -475,13 +469,8 @@ optimize();
           <span class="stop-number">{{ index + 1 }}</span>
           <input v-model="stop.city" :aria-label="`Stop ${index + 1} city`" list="city-options" type="search" autocomplete="off" />
 
-          <select v-model="stop.rule" :aria-label="`Stop ${index + 1} requirement`">
-            <option v-for="option in requirementOptions" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
-
-          <input v-model="stop.date" :aria-label="`Stop ${index + 1} requirement date`" :disabled="!stop.rule" type="date" />
+          <input v-model="stop.visitBefore" :aria-label="`Stop ${index + 1} visit before date`" type="date" />
+          <input v-model.number="stop.stayDays" :aria-label="`Stop ${index + 1} days to spend`" min="0" step="0.5" type="number" />
 
           <button class="icon-button" type="button" :disabled="stops.length === 1" @click="removeStop(stop.id)">
             x
@@ -590,6 +579,9 @@ optimize();
             <p>
               {{ leg.departOn }} · {{ leg.mode }} · {{ leg.hours }}h · {{ leg.distanceKm.toLocaleString() }} km · arrive by
               {{ leg.arriveBy }}
+            </p>
+            <p v-if="leg.stayHoursAfter" class="leg-stay">
+              Spend {{ leg.stayDaysAfter }} day{{ leg.stayDaysAfter === 1 ? '' : 's' }} in {{ leg.to }} before the next step.
             </p>
             <p v-if="legPrice(index)" class="leg-price">
               {{ legPrice(index) }} USD<span v-if="legProvider(index)"> via {{ legProvider(index) }}</span>
