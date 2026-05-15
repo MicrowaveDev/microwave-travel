@@ -220,23 +220,28 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
 }
 
 function findPopularRouteTarget(legs) {
-  const lastCity = legs.at(-1)?.to;
-  const dubaiToPortoIndex = legs.findIndex((leg) => leg.from === 'Dubai' && lastCity === 'Porto');
-  if (dubaiToPortoIndex !== -1) {
-    return { startIndex: dubaiToPortoIndex, direction: { from: 'Dubai', to: 'Porto' } };
-  }
-
-  const portoToDubaiIndex = legs.findIndex((leg) => leg.from === 'Porto' && routeEventuallyReaches(legs, 'Dubai'));
-  if (portoToDubaiIndex !== -1) {
-    const targetIndex = legs.findIndex((leg, index) => index >= portoToDubaiIndex && leg.to === 'Dubai');
-    return { startIndex: portoToDubaiIndex, direction: { from: 'Porto', to: 'Dubai' }, endIndex: targetIndex + 1 };
-  }
-
-  return null;
+  const candidates = [
+    ...findPopularRouteTargetsForDirection(legs, { from: 'Porto', to: 'Dubai' }),
+    ...findPopularRouteTargetsForDirection(legs, { from: 'Dubai', to: 'Porto' })
+  ];
+  candidates.sort((a, b) => a.startIndex - b.startIndex || a.endIndex - b.endIndex);
+  return candidates[0] || null;
 }
 
-function routeEventuallyReaches(legs, city) {
-  return legs.some((leg) => leg.to === city);
+function findPopularRouteTargetsForDirection(legs, direction) {
+  const candidates = [];
+  for (let startIndex = 0; startIndex < legs.length; startIndex += 1) {
+    if (legs[startIndex].from !== direction.from) continue;
+    for (let endIndex = startIndex; endIndex < legs.length; endIndex += 1) {
+      if (legs[endIndex].to !== direction.to) continue;
+      const segment = legs.slice(startIndex, endIndex + 1);
+      if (isReplaceablePopularRoute(segment, direction)) {
+        candidates.push({ startIndex, endIndex: endIndex + 1, direction });
+        break;
+      }
+    }
+  }
+  return candidates;
 }
 
 function isReplaceablePopularRoute(legs, direction) {

@@ -265,6 +265,64 @@ describe('flight price providers', () => {
     assert.deepEqual(quote.optimization.selectedRoute, ['Porto', 'Doha', 'Dubai']);
     assert.deepEqual(quote.optimizedRouteLegs.map((leg) => `${leg.from}-${leg.to}`), ['Porto-Doha', 'Doha-Dubai']);
   });
+
+  it('compares Porto to Dubai when a later Dubai leg is not a Porto return segment', async () => {
+    clearFlightPriceCache();
+    const originalSerpApiKey = process.env.SERPAPI_KEY;
+    const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
+    const originalYandexKey = process.env.YANDEX_RASP_API_KEY;
+    const originalFetch = globalThis.fetch;
+    process.env.SERPAPI_KEY = 'test-serpapi-key';
+    delete process.env.TRAVELPAYOUTS_TOKEN;
+    delete process.env.YANDEX_RASP_API_KEY;
+
+    const routePrices = new Map([
+      ['OPO-DXB', 737],
+      ['OPO-MAD', 100],
+      ['MAD-DXB', 120],
+      ['DXB-MOW', 484],
+      ['MOW-KGD', 99],
+      ['GDN-OPO', 249]
+    ]);
+    const events = [];
+    globalThis.fetch = async (url) => {
+      const params = new URL(url).searchParams;
+      const route = `${params.get('departure_id')}-${params.get('arrival_id')}`;
+      const price = routePrices.get(route);
+      return Response.json({
+        best_flights: price ? [{ price, flights: [{ airline: 'Test Air' }] }] : [],
+        search_metadata: { id: `search-${route}` }
+      });
+    };
+
+    const quote = await quoteFlightPrices(
+      {
+        legs: [
+          { from: 'Porto', to: 'Dubai', departOn: '2026-05-20', mode: 'flight' },
+          { from: 'Dubai', to: 'Moscow', departOn: '2026-05-23', mode: 'flight' },
+          { from: 'Moscow', to: 'Kaliningrad', departOn: '2026-06-06', mode: 'flight' },
+          { from: 'Kaliningrad', to: 'Gdansk', departOn: '2026-06-13', mode: 'bus' },
+          { from: 'Gdansk', to: 'Porto', departOn: '2026-06-13', mode: 'flight' }
+        ]
+      },
+      { onProgress: (event) => events.push(event) }
+    );
+
+    globalThis.fetch = originalFetch;
+    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
+    restoreEnv('TRAVELPAYOUTS_TOKEN', originalTravelpayoutsToken);
+    restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
+    clearFlightPriceCache();
+
+    assert.equal(quote.totalAmount, 1052);
+    assert.deepEqual(quote.optimization.selectedRoute, ['Porto', 'Madrid', 'Dubai']);
+    assert.deepEqual(
+      quote.optimizedRouteLegs.map((leg) => `${leg.from}-${leg.to}`),
+      ['Porto-Madrid', 'Madrid-Dubai', 'Dubai-Moscow', 'Moscow-Kaliningrad', 'Kaliningrad-Gdansk', 'Gdansk-Porto']
+    );
+    assert.ok(events.some((event) => event.step === 'compare-start' && event.message.includes('Porto to Dubai')));
+    assert.ok(events.some((event) => event.step === 'candidate-best' && event.message.includes('Porto -> Madrid -> Dubai')));
+  });
 });
 
 function restoreEnv(name, value) {
