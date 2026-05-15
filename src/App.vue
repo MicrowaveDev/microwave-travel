@@ -30,6 +30,14 @@ const routeLabel = computed(() => {
   return [plan.value.origin, ...plan.value.stops, plan.value.returnsTo].join(' -> ');
 });
 
+const priceLabel = computed(() => {
+  if (pricingLoading.value) return 'Loading';
+  if (!priceQuote.value) return 'No price';
+  if (priceQuote.value.totalAmount) return `$${priceQuote.value.totalAmount.toLocaleString()}`;
+  if (priceQuote.value.pricedLegCount > 0) return 'Partial';
+  return priceQuote.value.provider ? 'No price' : 'Needs key';
+});
+
 function createStop(city = 'Doha', rule = '', date = '') {
   return {
     id: crypto.randomUUID(),
@@ -118,6 +126,10 @@ function legPrice(index) {
   return typeof price === 'number' ? `$${price.toLocaleString()}` : null;
 }
 
+function legPriceError(index) {
+  return priceQuote.value?.legs?.[index]?.error || null;
+}
+
 optimize();
 </script>
 
@@ -201,7 +213,7 @@ optimize();
         </div>
         <div>
           <span>Price</span>
-          <strong>{{ priceQuote?.totalAmount ? `$${priceQuote.totalAmount.toLocaleString()}` : pricingLoading ? 'Loading' : 'Needs key' }}</strong>
+          <strong>{{ priceLabel }}</strong>
         </div>
       </div>
 
@@ -233,6 +245,7 @@ optimize();
               {{ leg.arriveBy }}
             </p>
             <p v-if="legPrice(index)" class="leg-price">{{ legPrice(index) }} USD</p>
+            <p v-else-if="legPriceError(index)" class="leg-price-missing">{{ legPriceError(index) }}</p>
             <small>{{ leg.note }} Reliability {{ Math.round(leg.reliability * 100) }}%.</small>
           </div>
         </li>

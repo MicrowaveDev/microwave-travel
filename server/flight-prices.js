@@ -16,14 +16,21 @@ export async function quoteFlightPrices(input) {
   }
 
   const attempts = [];
+  const providers = process.env.SERPAPI_KEY
+    ? [
+        ['serpapi', () => quoteWithSerpApi(legs)],
+        ['amadeus', () => quoteWithAmadeus(legs)]
+      ]
+    : [
+        ['amadeus', () => quoteWithAmadeus(legs)],
+        ['serpapi', () => quoteWithSerpApi(legs)]
+      ];
 
-  const amadeus = await tryProvider('amadeus', () => quoteWithAmadeus(legs));
-  attempts.push(amadeus.summary);
-  if (amadeus.quote) return { ...amadeus.quote, attempts };
-
-  const serpApi = await tryProvider('serpapi', () => quoteWithSerpApi(legs));
-  attempts.push(serpApi.summary);
-  if (serpApi.quote) return { ...serpApi.quote, attempts };
+  for (const [name, provider] of providers) {
+    const result = await tryProvider(name, provider);
+    attempts.push(result.summary);
+    if (result.quote) return { ...result.quote, attempts };
+  }
 
   return {
     provider: null,
@@ -31,7 +38,9 @@ export async function quoteFlightPrices(input) {
     totalAmount: null,
     legs: [],
     attempts,
-    message: 'No flight price provider is configured. Add Amadeus keys or a SerpApi key to the server environment.'
+    message: configuredProviders().length
+      ? 'No provider returned prices for this route.'
+      : 'No flight price provider is configured. Add a SerpApi key or Amadeus keys to the server environment.'
   };
 }
 
@@ -108,8 +117,19 @@ async function quoteWithSerpApi(legs) {
     });
     const response = await fetch(`https://serpapi.com/search?${params}`);
     const payload = await readJson(response);
-    if (!response.ok || payload.error) {
+    if (!response.ok) {
       throw new Error(payload.error || `SerpApi failed for ${leg.origin}-${leg.destination}`);
+    }
+    if (payload.error) {
+      pricedLegs.push({
+        ...leg,
+        amount: null,
+        currency: 'USD',
+        providerOfferId: payload.search_metadata?.id || null,
+        carrier: null,
+        error: payload.error
+      });
+      continue;
     }
 
     const offer = payload.best_flights?.[0] || payload.other_flights?.[0] || payload.flights?.[0];
@@ -118,7 +138,8 @@ async function quoteWithSerpApi(legs) {
       amount: typeof offer?.price === 'number' ? offer.price : null,
       currency: 'USD',
       providerOfferId: payload.search_metadata?.id || null,
-      carrier: offer?.flights?.[0]?.airline || null
+      carrier: offer?.flights?.[0]?.airline || null,
+      error: offer ? null : 'No flights found for this leg.'
     });
   }
 
@@ -158,15 +179,32 @@ function normalizeQuote(provider, legs) {
     provider,
     currency: 'USD',
     totalAmount: priced.length === legs.length ? roundMoney(priced.reduce((sum, leg) => sum + leg.amount, 0)) : null,
+    pricedLegCount: priced.length,
+    legCount: legs.length,
     legs: legs.map((leg) => ({
       ...leg,
       amount: Number.isFinite(leg.amount) ? roundMoney(leg.amount) : null
     })),
     message:
-      provider === 'amadeus'
-        ? 'Amadeus one-way leg prices in USD. Use Flight Offers Price before booking.'
-        : 'SerpApi Google Flights fallback prices in USD.'
+      priced.length === legs.length
+        ? provider === 'amadeus'
+          ? 'Amadeus one-way leg prices in USD. Use Flight Offers Price before booking.'
+          : 'SerpApi Google Flights prices in USD.'
+        : priced.length > 0
+          ? `${providerLabel(provider)} returned ${priced.length} of ${legs.length} leg prices in USD.`
+          : `${providerLabel(provider)} is configured, but no prices were found for this route.`
   };
+}
+
+function configuredProviders() {
+  return [
+    process.env.SERPAPI_KEY ? 'serpapi' : null,
+    process.env.AMADEUS_CLIENT_ID && process.env.AMADEUS_CLIENT_SECRET ? 'amadeus' : null
+  ].filter(Boolean);
+}
+
+function providerLabel(provider) {
+  return provider === 'serpapi' ? 'SerpApi Google Flights' : 'Amadeus';
 }
 
 function normalizeLegs(legs) {

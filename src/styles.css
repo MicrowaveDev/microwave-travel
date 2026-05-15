@@ -353,6 +353,12 @@ h2 {
   font-weight: 900;
 }
 
+.leg-price-missing {
+  margin-top: 6px;
+  color: #7a4a00;
+  font-weight: 800;
+}
+
 .legs small {
   display: block;
   margin-top: 4px;
