@@ -65,4 +65,18 @@ describe('travel optimizer', () => {
       ['Moscow->Kaliningrad:flight', 'Kaliningrad->Moscow:flight']
     );
   });
+
+  it('removes duplicate consecutive city legs', () => {
+    const plan = optimizeTrip({
+      origin: 'porto',
+      stops: ['dubai', 'dubai'],
+      startDate: '2026-05-20',
+      lockOrder: true
+    });
+
+    assert.deepEqual(
+      plan.legs.map((leg) => `${leg.from}->${leg.to}`),
+      ['Porto->Dubai', 'Dubai->Porto']
+    );
+  });
 });

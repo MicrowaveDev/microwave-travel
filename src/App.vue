@@ -28,6 +28,9 @@ let optimizeDebounce = null;
 
 const routeLabel = computed(() => {
   if (!plan.value) return '';
+  if (plan.value.legs?.length) {
+    return [plan.value.legs[0].from, ...plan.value.legs.map((leg) => leg.to)].join(' -> ');
+  }
   return [plan.value.origin, ...plan.value.stops, plan.value.returnsTo].join(' -> ');
 });
 

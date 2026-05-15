@@ -135,7 +135,7 @@ function nearestNeighbor(origin, stops) {
 }
 
 function buildItinerary(origin, stops, startDate) {
-  const route = expandRouteForTransfers([origin, ...stops, origin]);
+  const route = collapseConsecutiveDuplicates(expandRouteForTransfers([origin, ...stops, origin]));
   const legs = [];
   let cursor = new Date(startDate);
   let totalHours = 0;
@@ -164,6 +164,10 @@ function buildItinerary(origin, stops, startDate) {
   }
 
   return { legs, totalHours, totalDistanceKm };
+}
+
+function collapseConsecutiveDuplicates(route) {
+  return route.filter((city, index) => index === 0 || city !== route[index - 1]);
 }
 
 function expandRouteForTransfers(route) {
