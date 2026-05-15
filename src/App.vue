@@ -122,12 +122,15 @@ async function fetchPrices(routePlan = plan.value) {
 }
 
 function legPrice(index) {
-  const price = priceQuote.value?.legs?.[index]?.amount;
+  const leg = plan.value?.legs?.[index];
+  const price = priceQuote.value?.legs?.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.amount;
   return typeof price === 'number' ? `$${price.toLocaleString()}` : null;
 }
 
 function legPriceError(index) {
-  return priceQuote.value?.legs?.[index]?.error || null;
+  const leg = plan.value?.legs?.[index];
+  if (leg?.mode === 'bus') return 'Ground transfer: check bus ticket and border requirements separately.';
+  return priceQuote.value?.legs?.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.error || null;
 }
 
 optimize();
@@ -241,7 +244,7 @@ optimize();
           <div>
             <h2>{{ leg.from }} to {{ leg.to }}</h2>
             <p>
-              {{ leg.departOn }} · {{ leg.hours }}h · {{ leg.distanceKm.toLocaleString() }} km · arrive by
+              {{ leg.departOn }} · {{ leg.mode }} · {{ leg.hours }}h · {{ leg.distanceKm.toLocaleString() }} km · arrive by
               {{ leg.arriveBy }}
             </p>
             <p v-if="legPrice(index)" class="leg-price">{{ legPrice(index) }} USD</p>

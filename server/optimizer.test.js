@@ -37,4 +37,18 @@ describe('travel optimizer', () => {
     assert.equal(plan.legs[0].departOn, '2026-05-20');
     assert.ok(plan.legs[0].arriveBy);
   });
+
+  it('routes Kaliningrad through Gdansk ground transfer', () => {
+    const plan = optimizeTrip({
+      origin: 'porto',
+      stops: ['kaliningrad', 'moscow'],
+      startDate: '2026-05-20',
+      lockOrder: true
+    });
+
+    assert.deepEqual(
+      plan.legs.map((leg) => `${leg.from}->${leg.to}:${leg.mode}`),
+      ['Porto->Gdansk:flight', 'Gdansk->Kaliningrad:bus', 'Kaliningrad->Gdansk:bus', 'Gdansk->Moscow:flight', 'Moscow->Porto:flight']
+    );
+  });
 });

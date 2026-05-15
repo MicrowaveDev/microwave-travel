@@ -2,6 +2,7 @@ const CITY_IATA_CODES = new Map([
   ['porto', 'OPO'],
   ['doha', 'DOH'],
   ['dubai', 'DXB'],
+  ['gdansk', 'GDN'],
   ['kaliningrad', 'KGD'],
   ['moscow', 'MOW'],
   ['moskow', 'MOW']
@@ -212,10 +213,11 @@ function normalizeLegs(legs) {
     ? legs.map((leg) => ({
         from: leg.from,
         to: leg.to,
+        mode: leg.mode || 'flight',
         origin: toIataCode(leg.from),
         destination: toIataCode(leg.to),
         departureDate: leg.departOn || leg.departureDate || leg.arriveBy
-      }))
+      })).filter((leg) => leg.mode !== 'bus')
     : [];
 }
 

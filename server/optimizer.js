@@ -5,6 +5,8 @@ const CITY_ALIASES = new Map([
   ['doh', 'Doha'],
   ['dubai', 'Dubai'],
   ['dxb', 'Dubai'],
+  ['gdansk', 'Gdansk'],
+  ['gdn', 'Gdansk'],
   ['kaliningrad', 'Kaliningrad'],
   ['kgd', 'Kaliningrad'],
   ['moscow', 'Moscow'],
@@ -17,6 +19,7 @@ const CITY_COORDS = {
   Porto: [41.242, -8.678],
   Doha: [25.273, 51.608],
   Dubai: [25.253, 55.365],
+  Gdansk: [54.377, 18.466],
   Kaliningrad: [54.89, 20.592],
   Moscow: [55.756, 37.617]
 };
@@ -26,6 +29,10 @@ const DIRECT_ROUTE_HINTS = new Map([
   ['Doha|Dubai', { hours: 1.3, reliability: 0.96, note: 'Dense Gulf corridor.' }],
   ['Dubai|Doha', { hours: 1.3, reliability: 0.96, note: 'Dense Gulf corridor.' }],
   ['Dubai|Kaliningrad', { hours: 8.8, reliability: 0.45, note: 'Likely multiple connections.' }],
+  ['Dubai|Gdansk', { hours: 7.1, reliability: 0.62, note: 'Flight to Gdansk for Kaliningrad ground transfer.' }],
+  ['Gdansk|Kaliningrad', { hours: 4.5, reliability: 0.58, mode: 'bus', note: 'Bus/ground transfer from Gdansk to Kaliningrad; verify border rules before booking.' }],
+  ['Kaliningrad|Gdansk', { hours: 4.5, reliability: 0.58, mode: 'bus', note: 'Bus/ground transfer from Kaliningrad to Gdansk; verify border rules before booking.' }],
+  ['Gdansk|Moscow', { hours: 6.8, reliability: 0.5, note: 'Flight from Gdansk after Kaliningrad ground transfer.' }],
   ['Kaliningrad|Moscow', { hours: 2.0, reliability: 0.68, note: 'Check current border and airspace constraints.' }],
   ['Moscow|Dubai', { hours: 5.6, reliability: 0.72, note: 'Common long-haul leg.' }],
   ['Doha|Porto', { hours: 8.4, reliability: 0.74, note: 'Usually one stop back to Porto.' }]
@@ -128,7 +135,7 @@ function nearestNeighbor(origin, stops) {
 }
 
 function buildItinerary(origin, stops, startDate) {
-  const route = [origin, ...stops, origin];
+  const route = expandRouteForTransfers([origin, ...stops, origin]);
   const legs = [];
   let cursor = new Date(startDate);
   let totalHours = 0;
@@ -149,6 +156,7 @@ function buildItinerary(origin, stops, startDate) {
       arriveBy: cursor.toISOString().slice(0, 10),
       hours: round1(estimate.hours),
       distanceKm: Math.round(estimate.distanceKm),
+      mode: estimate.mode,
       reliability: estimate.reliability,
       note: estimate.note
     });
@@ -158,17 +166,34 @@ function buildItinerary(origin, stops, startDate) {
   return { legs, totalHours, totalDistanceKm };
 }
 
+function expandRouteForTransfers(route) {
+  const expanded = [route[0]];
+  for (let index = 1; index < route.length; index += 1) {
+    const previous = expanded[expanded.length - 1];
+    const current = route[index];
+    if (current === 'Kaliningrad' && previous !== 'Gdansk') {
+      expanded.push('Gdansk');
+    }
+    if (previous === 'Kaliningrad' && current !== 'Gdansk') {
+      expanded.push('Gdansk');
+    }
+    expanded.push(current);
+  }
+  return expanded;
+}
+
 function routeEstimate(from, to) {
   const direct = DIRECT_ROUTE_HINTS.get(`${from}|${to}`);
   const distanceKm = haversineKm(CITY_COORDS[from], CITY_COORDS[to]);
   if (direct) {
-    return { ...direct, distanceKm };
+    return { mode: 'flight', ...direct, distanceKm };
   }
   const connectionPenalty = distanceKm > 3500 ? 3.2 : 1.6;
   return {
     hours: round1(distanceKm / 760 + connectionPenalty),
     distanceKm,
     reliability: distanceKm > 3500 ? 0.55 : 0.66,
+    mode: 'flight',
     note: 'Heuristic estimate until live provider data is connected.'
   };
 }
