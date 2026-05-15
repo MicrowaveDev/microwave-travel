@@ -55,6 +55,7 @@ let amadeusTokenCache = null;
 
 export async function quoteFlightPrices(input, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
+  const providerState = createProviderState();
   const legs = normalizeLegs(input.legs);
   if (legs.length === 0) {
     throw new Error('Optimize a route before fetching prices.');
@@ -63,9 +64,9 @@ export async function quoteFlightPrices(input, options = {}) {
   emitProgress(onProgress, 'pricing-start', `Pricing ${legs.length} flight leg${legs.length === 1 ? '' : 's'} in USD.`, {
     legCount: legs.length
   });
-  const quoted = await quoteNormalizedLegs(legs, { onProgress, phase: 'Current route' });
+  const quoted = await quoteNormalizedLegs(legs, { onProgress, phase: 'Current route', providerState });
   const quote = normalizeQuote('mixed', quoted.legs, quoted.attempts);
-  const optimized = await optimizePopularTransferRoute(input.legs, quote, { onProgress });
+  const optimized = await optimizePopularTransferRoute(input.legs, quote, { onProgress, providerState });
   const finalQuote = optimized || quote;
   emitProgress(onProgress, 'pricing-complete', finalQuote.totalAmount
     ? `Finished pricing: $${finalQuote.totalAmount.toLocaleString()} USD.`
@@ -87,6 +88,7 @@ export function closeFlightPriceCacheDb() {
 
 async function quoteNormalizedLegs(legs, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
+  const providerState = options.providerState || createProviderState();
   const quotedLegs = [];
   const attempts = [];
 
@@ -99,9 +101,23 @@ async function quoteNormalizedLegs(legs, options = {}) {
       date: leg.departureDate,
       candidateRoute: options.candidateRoute || null
     });
-    const result = await quoteLeg(leg, { onProgress, phase: options.phase, candidateRoute: options.candidateRoute });
+    const result = await quoteLeg(leg, {
+      onProgress,
+      phase: options.phase,
+      candidateRoute: options.candidateRoute,
+      providerState
+    });
     quotedLegs.push(result.leg);
     attempts.push(...result.attempts);
+    if (options.stopOnUnpriced && !Number.isFinite(result.leg?.amount)) {
+      emitProgress(onProgress, 'candidate-pruned', `Stopping ${options.candidateRoute || 'candidate'} early because ${routeLabel(leg)} has no comparable USD price.`, {
+        route: routeLabel(leg),
+        date: leg.departureDate,
+        candidateRoute: options.candidateRoute || null,
+        reason: result.leg?.error || 'No comparable USD price.'
+      });
+      break;
+    }
   }
 
   return { legs: quotedLegs, attempts };
@@ -109,6 +125,7 @@ async function quoteNormalizedLegs(legs, options = {}) {
 
 async function optimizePopularTransferRoute(originalLegs, initialQuote, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
+  const providerState = options.providerState || createProviderState();
   if (!Array.isArray(originalLegs)) return null;
 
   const optimizationTarget = findPopularRouteTarget(originalLegs);
@@ -143,7 +160,9 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
       const candidateQuoted = await quoteNormalizedLegs(candidateNormalizedLegs, {
         onProgress,
         phase: 'Compare option',
-        candidateRoute: candidateLabel
+        candidateRoute: candidateLabel,
+        providerState,
+        stopOnUnpriced: true
       });
       const candidateQuote = normalizeQuote('mixed', candidateQuoted.legs, candidateQuoted.attempts);
       if (!Number.isFinite(candidateQuote.totalAmount)) {
@@ -389,6 +408,7 @@ async function quoteWithSerpApi(legs) {
 
 async function quoteLeg(leg, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
+  const providerState = options.providerState || createProviderState();
   const providers = isRussianDirection(leg)
     ? [
         ['aviasales', () => quoteLegWithTravelpayouts(leg)],
@@ -403,30 +423,40 @@ async function quoteLeg(leg, options = {}) {
   let bestNoPriceResult = null;
 
   for (const [provider, fn] of providers) {
-    emitProgress(onProgress, 'provider-start', `Checking ${providerLabel(provider)} for ${routeLabel(leg)} on ${leg.departureDate}.`, {
-      provider,
-      route: routeLabel(leg),
-      date: leg.departureDate,
-      phase: options.phase,
-      candidateRoute: options.candidateRoute || null,
-      russianDirection: isRussianDirection(leg)
-    });
-    const result = await tryCachedProvider(provider, leg, fn, { onProgress });
+    const disabledReason = providerDisabledReason(providerState, provider);
+    if (!disabledReason) {
+      emitProgress(onProgress, 'provider-start', `Checking ${providerLabel(provider)} for ${routeLabel(leg)} on ${leg.departureDate}.`, {
+        provider,
+        route: routeLabel(leg),
+        date: leg.departureDate,
+        phase: options.phase,
+        candidateRoute: options.candidateRoute || null,
+        russianDirection: isRussianDirection(leg)
+      });
+    }
+    const result = await tryCachedProvider(provider, leg, fn, { onProgress, skipNetworkReason: disabledReason });
     attempts.push({
       ...result.summary,
       route: `${leg.origin}-${leg.destination}`,
       russianDirection: isRussianDirection(leg)
     });
-    emitProgress(onProgress, result.summary.ok ? 'provider-complete' : 'provider-failed', providerProgressMessage(provider, leg, result), {
+    emitProgress(onProgress, providerProgressStep(result), providerProgressMessage(provider, leg, result), {
       provider,
       route: routeLabel(leg),
       date: leg.departureDate,
       amount: result.quote?.amount || null,
       cached: result.summary.cached === true,
+      skipped: result.summary.skipped === true,
       error: result.summary.error || result.quote?.error || null,
       phase: options.phase,
       candidateRoute: options.candidateRoute || null
     });
+    if (!result.summary.ok && shouldDisableProvider(provider, result.summary.error) && disableProvider(providerState, provider, result.summary.error)) {
+      emitProgress(onProgress, 'provider-disabled', `${providerLabel(provider)} will be skipped for the rest of this search: ${result.summary.error}.`, {
+        provider,
+        reason: result.summary.error
+      });
+    }
     if (result.quote) {
       if (Number.isFinite(result.quote.amount) || result.quote.schedule) {
         return { leg: result.quote, attempts };
@@ -457,6 +487,13 @@ async function tryCachedProvider(provider, leg, fn, options = {}) {
     };
   }
 
+  if (options.skipNetworkReason) {
+    return {
+      quote: null,
+      summary: { provider, ok: false, skipped: true, error: options.skipNetworkReason }
+    };
+  }
+
   const result = await tryProvider(provider, fn);
   if (result.quote) {
     setCachedFlightPrice(cacheKey, provider, leg, cloneQuote(result.quote), Date.now() + LEG_QUOTE_CACHE_TTL_MS);
@@ -483,11 +520,39 @@ function routeLabel(leg) {
 
 function providerProgressMessage(provider, leg, result) {
   const label = providerLabel(provider);
+  if (result.summary.skipped) return `Skipping ${label} for ${routeLabel(leg)}: ${result.summary.error}.`;
   if (!result.summary.ok) return `${label} failed for ${routeLabel(leg)}: ${result.summary.error}.`;
   if (result.summary.cached) return `${label} SQLite cache hit for ${routeLabel(leg)}.`;
   if (Number.isFinite(result.quote?.amount)) return `${label} found ${routeLabel(leg)} for $${result.quote.amount.toLocaleString()} USD.`;
   if (result.quote?.schedule) return `${label} found schedule data for ${routeLabel(leg)}, but no USD fare.`;
   return `${label} returned no USD price for ${routeLabel(leg)}.`;
+}
+
+function providerProgressStep(result) {
+  if (result.summary.skipped) return 'provider-skipped';
+  return result.summary.ok ? 'provider-complete' : 'provider-failed';
+}
+
+function createProviderState() {
+  return { disabledProviders: new Map() };
+}
+
+function providerDisabledReason(providerState, provider) {
+  return providerState.disabledProviders.get(provider) || null;
+}
+
+function disableProvider(providerState, provider, reason) {
+  if (providerState.disabledProviders.has(provider)) return false;
+  providerState.disabledProviders.set(provider, reason);
+  return true;
+}
+
+function shouldDisableProvider(provider, errorMessage = '') {
+  if (!errorMessage) return false;
+  if (provider === 'serpapi') {
+    return /run out of searches|quota|rate limit|too many requests|429/i.test(errorMessage);
+  }
+  return /rate limit|too many requests|429/i.test(errorMessage);
 }
 
 function cloneQuote(quote) {
