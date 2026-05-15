@@ -253,7 +253,7 @@ optimize();
         <p v-else>{{ priceQuote.message }}</p>
         <div v-if="priceQuote?.attempts?.length" class="provider-attempts">
           <span v-for="attempt in priceQuote.attempts" :key="attempt.provider" :class="{ failed: !attempt.ok }">
-            {{ attempt.provider }} {{ attempt.ok ? 'ready' : attempt.error }}
+            {{ attempt.provider }} {{ attempt.ok ? (attempt.cached ? 'cached' : 'ready') : attempt.error }}
           </span>
         </div>
       </div>

@@ -10,6 +10,8 @@ const CITY_IATA_CODES = new Map([
 
 const RUSSIAN_CITY_NAMES = new Set(['Kaliningrad', 'Moscow']);
 const RUSSIAN_IATA_CODES = new Set(['KGD', 'MOW', 'SVO', 'DME', 'VKO']);
+const LEG_QUOTE_CACHE_TTL_MS = 60 * 60 * 1000;
+const legQuoteCache = new Map();
 let amadeusTokenCache = null;
 
 export async function quoteFlightPrices(input) {
@@ -28,6 +30,10 @@ export async function quoteFlightPrices(input) {
   }
 
   return normalizeQuote('mixed', quotedLegs, attempts);
+}
+
+export function clearFlightPriceCache() {
+  legQuoteCache.clear();
 }
 
 async function tryProvider(name, fn) {
@@ -147,7 +153,7 @@ async function quoteLeg(leg) {
   let bestNoPriceResult = null;
 
   for (const [provider, fn] of providers) {
-    const result = await tryProvider(provider, fn);
+    const result = await tryCachedProvider(provider, leg, fn);
     attempts.push({
       ...result.summary,
       route: `${leg.origin}-${leg.destination}`,
@@ -165,6 +171,35 @@ async function quoteLeg(leg) {
     leg: bestNoPriceResult || { ...leg, amount: null, currency: 'USD', provider: null, error: 'No provider returned a price for this leg.' },
     attempts
   };
+}
+
+async function tryCachedProvider(provider, leg, fn) {
+  const cacheKey = legQuoteCacheKey(provider, leg);
+  const cached = legQuoteCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return {
+      quote: cloneQuote(cached.quote),
+      summary: { provider, ok: true, cached: true }
+    };
+  }
+  if (cached) legQuoteCache.delete(cacheKey);
+
+  const result = await tryProvider(provider, fn);
+  if (result.quote) {
+    legQuoteCache.set(cacheKey, {
+      quote: cloneQuote(result.quote),
+      expiresAt: Date.now() + LEG_QUOTE_CACHE_TTL_MS
+    });
+  }
+  return result;
+}
+
+function legQuoteCacheKey(provider, leg) {
+  return [provider, leg.origin, leg.destination, leg.departureDate, '1', 'USD'].join('|');
+}
+
+function cloneQuote(quote) {
+  return quote ? JSON.parse(JSON.stringify(quote)) : null;
 }
 
 async function quoteLegWithSerpApi(leg) {
