@@ -340,6 +340,11 @@ button:disabled {
   list-style: none;
 }
 
+.price-log-details {
+  display: grid;
+  gap: 8px;
+}
+
 .price-progress li {
   display: grid;
   grid-template-columns: 108px minmax(0, 1fr);

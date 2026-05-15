@@ -47,6 +47,7 @@ const priceQuote = ref(null);
 const priceProgress = ref([]);
 const inputChangeLog = ref([]);
 const copyLogStatus = ref('');
+const logsCollapsed = ref(false);
 let optimizeDebounce = null;
 let priceRequestId = 0;
 let pricingAbortController = null;
@@ -237,6 +238,7 @@ function scheduleOptimize() {
   priceQuote.value = null;
   priceProgress.value = [];
   copyLogStatus.value = '';
+  logsCollapsed.value = false;
   optimizeDebounce = setTimeout(() => {
     optimize();
   }, 350);
@@ -542,21 +544,26 @@ optimize();
           </div>
           <div class="price-actions">
             <strong v-if="pricingLoading">{{ priceProgress.length }} steps</strong>
+            <button class="copy-log-button" type="button" :disabled="!priceProgress.length" @click="logsCollapsed = !logsCollapsed">
+              {{ logsCollapsed ? 'Show logs' : 'Collapse logs' }}
+            </button>
             <button class="copy-log-button" type="button" :disabled="!priceProgress.length" @click="copyPricingLog">
               {{ copyLogStatus || 'Copy log' }}
             </button>
           </div>
         </div>
-        <ul v-if="visiblePriceProgress.length" class="price-progress">
-          <li v-for="(event, index) in visiblePriceProgress" :key="`${event.at}-${event.step}-${index}`">
-            <span>{{ event.step.replaceAll('-', ' ') }}</span>
-            <p>{{ event.message }}</p>
-          </li>
-        </ul>
-        <div v-if="priceQuote?.attempts?.length" class="provider-attempts">
-          <span v-for="(attempt, index) in priceQuote.attempts" :key="`${attempt.provider}-${attempt.route}-${index}`" :class="{ failed: !attempt.ok }">
-            {{ attempt.provider }} {{ attempt.ok ? (attempt.cached ? 'cached' : 'ready') : attempt.error }}
-          </span>
+        <div v-if="!logsCollapsed" class="price-log-details">
+          <ul v-if="visiblePriceProgress.length" class="price-progress">
+            <li v-for="(event, index) in visiblePriceProgress" :key="`${event.at}-${event.step}-${index}`">
+              <span>{{ event.step.replaceAll('-', ' ') }}</span>
+              <p>{{ event.message }}</p>
+            </li>
+          </ul>
+          <div v-if="priceQuote?.attempts?.length" class="provider-attempts">
+            <span v-for="(attempt, index) in priceQuote.attempts" :key="`${attempt.provider}-${attempt.route}-${index}`" :class="{ failed: !attempt.ok }">
+              {{ attempt.provider }} {{ attempt.ok ? (attempt.cached ? 'cached' : 'ready') : attempt.error }}
+            </span>
+          </div>
         </div>
       </div>
 
