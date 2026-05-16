@@ -450,10 +450,9 @@ button:disabled {
   gap: 8px;
   margin: 0;
   padding: 0;
-  list-style: none;
 }
 
-.legs li {
+.leg-card {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr);
   gap: 12px;
@@ -500,9 +499,10 @@ h2 {
   font-weight: 800;
 }
 
-.leg-stay {
-  margin-top: 6px;
+.stay-separator {
+  padding: 0 12px 0 56px;
   color: #0f5d57;
+  font-size: 0.84rem;
   font-weight: 800;
 }
 

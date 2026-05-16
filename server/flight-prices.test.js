@@ -373,6 +373,69 @@ describe('flight price providers', () => {
     assert.ok(events.some((event) => event.step === 'candidate-best' && event.message.includes('Porto -> Madrid -> Dubai')));
   });
 
+  it('preserves destination stay days when replacing Porto to Dubai with a transfer', async () => {
+    clearFlightPriceCache();
+    const originalSerpApiKey = process.env.SERPAPI_KEY;
+    const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
+    const originalYandexKey = process.env.YANDEX_RASP_API_KEY;
+    const originalFetch = globalThis.fetch;
+    process.env.SERPAPI_KEY = 'test-serpapi-key';
+    delete process.env.TRAVELPAYOUTS_TOKEN;
+    delete process.env.YANDEX_RASP_API_KEY;
+
+    const routePrices = new Map([
+      ['OPO-DXB-2026-05-20', 426],
+      ['OPO-MAD-2026-05-21', 23],
+      ['MAD-DXB-2026-05-21', 254],
+      ['OPO-BCN-2026-05-20', 30],
+      ['BCN-DXB-2026-05-20', 320],
+      ['DXB-MOW-2026-05-23', 520],
+      ['MOW-KGD-2026-06-06', 97],
+      ['GDN-OPO-2026-06-13', 249]
+    ]);
+    const events = [];
+    globalThis.fetch = async (url) => {
+      const params = new URL(url).searchParams;
+      const route = [
+        params.get('departure_id'),
+        params.get('arrival_id'),
+        params.get('outbound_date')
+      ].join('-');
+      const price = routePrices.get(route);
+      return Response.json({
+        best_flights: price ? [{ price, flights: [{ airline: 'Test Air' }] }] : [],
+        search_metadata: { id: `search-${route}` }
+      });
+    };
+
+    const quote = await quoteFlightPrices(
+      {
+        legs: [
+          { from: 'Porto', to: 'Dubai', departOn: '2026-05-20', arriveBy: '2026-05-20', mode: 'flight', stayHoursAfter: 72, stayDaysAfter: 3 },
+          { from: 'Dubai', to: 'Moscow', departOn: '2026-05-23', mode: 'flight' },
+          { from: 'Moscow', to: 'Kaliningrad', departOn: '2026-06-06', mode: 'flight' },
+          { from: 'Kaliningrad', to: 'Gdansk', departOn: '2026-06-13', mode: 'bus' },
+          { from: 'Gdansk', to: 'Porto', departOn: '2026-06-13', mode: 'flight' }
+        ]
+      },
+      { onProgress: (event) => events.push(event) }
+    );
+
+    globalThis.fetch = originalFetch;
+    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
+    restoreEnv('TRAVELPAYOUTS_TOKEN', originalTravelpayoutsToken);
+    restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
+    clearFlightPriceCache();
+
+    assert.equal(quote.totalAmount, 1216);
+    assert.deepEqual(quote.optimization.selectedRoute, ['Porto', 'Barcelona', 'Dubai']);
+    assert.equal(quote.optimizedRouteLegs[1].to, 'Dubai');
+    assert.equal(quote.optimizedRouteLegs[1].stayDaysAfter, 3);
+    assert.equal(quote.optimizedRouteLegs[2].from, 'Dubai');
+    assert.equal(quote.optimizedRouteLegs[2].departOn, '2026-05-23');
+    assert.ok(events.some((event) => event.step === 'candidate-skip' && event.details?.reason === 'stay-time'));
+  });
+
   it('replaces a missing Europe to Porto return price with a priced fallback hub route', async () => {
     clearFlightPriceCache();
     const originalSerpApiKey = process.env.SERPAPI_KEY;

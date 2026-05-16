@@ -162,6 +162,14 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
         date: departureDate
       });
       const candidateDisplayLegs = buildLegsForRoute(route, departureDate);
+      if (!candidatePreservesTailStay(candidateDisplayLegs, currentSuffix, originalLegs.slice(endIndex))) {
+        emitProgress(onProgress, 'candidate-skip', `${candidateLabel} on ${departureDate}: does not leave enough stay time before the next leg.`, {
+          route,
+          date: departureDate,
+          reason: 'stay-time'
+        });
+        continue;
+      }
       const candidateNormalizedLegs = normalizeLegs(candidateDisplayLegs);
       const candidateQuoted = await quoteNormalizedLegs(candidateNormalizedLegs, {
         onProgress,
@@ -225,7 +233,11 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
     ...initialQuote.attempts,
     ...best.quote.attempts.map((attempt) => ({ ...attempt, optimizedCandidate: true }))
   ]);
-  combinedQuote.optimizedRouteLegs = [...prefixDisplayLegs, ...best.displayLegs, ...tailDisplayLegs];
+  combinedQuote.optimizedRouteLegs = [
+    ...prefixDisplayLegs,
+    ...copyStayToReplacement(currentSuffix, best.displayLegs),
+    ...tailDisplayLegs
+  ];
   combinedQuote.optimization = {
     reason: `Found a cheaper priced ${direction.from} to ${direction.to} option.`,
     replacedRoute: currentSuffix.map((leg) => leg.from).concat(currentSuffix.at(-1).to),
@@ -242,6 +254,31 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
     selectedAmount: best.quote.totalAmount
   });
   return combinedQuote;
+}
+
+function candidatePreservesTailStay(candidateLegs, replacedLegs, tailLegs) {
+  const staySource = replacedLegs.at(-1);
+  const stayHours = Number(staySource?.stayHoursAfter) || 0;
+  const firstTailLeg = tailLegs[0];
+  if (!stayHours || !firstTailLeg) return true;
+
+  const arrival = new Date(`${candidateLegs.at(-1)?.arriveBy}T00:00:00.000Z`);
+  const nextDeparture = new Date(`${firstTailLeg.departOn || firstTailLeg.departureDate}T00:00:00.000Z`);
+  if (Number.isNaN(arrival.getTime()) || Number.isNaN(nextDeparture.getTime())) return true;
+  return addHoursToDate(arrival, stayHours) <= nextDeparture;
+}
+
+function copyStayToReplacement(replacedLegs, replacementLegs) {
+  const staySource = replacedLegs.at(-1);
+  if (!staySource?.stayHoursAfter || replacementLegs.length === 0) return replacementLegs;
+  return replacementLegs.map((leg, index) => index === replacementLegs.length - 1
+    ? {
+        ...leg,
+        stayHoursAfter: staySource.stayHoursAfter,
+        stayDaysAfter: staySource.stayDaysAfter
+      }
+    : leg
+  );
 }
 
 async function recoverMissingPortoReturnLeg(quote, displayLegs, options = {}) {
@@ -931,6 +968,10 @@ async function readJson(response) {
 
 function providerError(payload, fallback) {
   return payload.errors?.[0]?.detail || payload.error_description || payload.error || fallback;
+}
+
+function addHoursToDate(date, hours) {
+  return new Date(date.getTime() + hours * 60 * 60 * 1000);
 }
 
 function roundMoney(value) {

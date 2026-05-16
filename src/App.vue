@@ -685,26 +685,28 @@ optimize();
         <p v-for="warning in plan.warnings" :key="warning">{{ warning }}</p>
       </div>
 
-      <ol v-if="plan" class="legs">
-        <li v-for="(leg, index) in plan.legs" :key="`${leg.from}-${leg.to}-${index}`">
-          <div class="leg-index">{{ index + 1 }}</div>
-          <div>
-            <h2>{{ leg.from }} to {{ leg.to }}</h2>
-            <p>
-              {{ leg.departOn }} · {{ leg.mode }} · {{ leg.hours }}h · {{ leg.distanceKm.toLocaleString() }} km · arrive by
-              {{ leg.arriveBy }}
-            </p>
-            <p v-if="leg.stayHoursAfter" class="leg-stay">
-              Spend {{ leg.stayDaysAfter }} day{{ leg.stayDaysAfter === 1 ? '' : 's' }} in {{ leg.to }} before the next step.
-            </p>
-            <p v-if="legPrice(index)" class="leg-price">
-              {{ legPrice(index) }} USD<span v-if="legProvider(index)"> via {{ legProvider(index) }}</span>
-            </p>
-            <p v-else-if="legPriceError(index)" class="leg-price-missing">{{ legPriceError(index) }}</p>
-            <small>{{ leg.note }} Reliability {{ Math.round(leg.reliability * 100) }}%.</small>
+      <div v-if="plan" class="legs">
+        <template v-for="(leg, index) in plan.legs" :key="`${leg.from}-${leg.to}-${index}`">
+          <article class="leg-card">
+            <div class="leg-index">{{ index + 1 }}</div>
+            <div>
+              <h2>{{ leg.from }} to {{ leg.to }}</h2>
+              <p>
+                {{ leg.departOn }} · {{ leg.mode }} · {{ leg.hours }}h · {{ leg.distanceKm.toLocaleString() }} km · arrive by
+                {{ leg.arriveBy }}
+              </p>
+              <p v-if="legPrice(index)" class="leg-price">
+                {{ legPrice(index) }} USD<span v-if="legProvider(index)"> via {{ legProvider(index) }}</span>
+              </p>
+              <p v-else-if="legPriceError(index)" class="leg-price-missing">{{ legPriceError(index) }}</p>
+              <small>{{ leg.note }} Reliability {{ Math.round(leg.reliability * 100) }}%.</small>
+            </div>
+          </article>
+          <div v-if="leg.stayHoursAfter" class="stay-separator">
+            Stay {{ leg.stayDaysAfter }} day{{ leg.stayDaysAfter === 1 ? '' : 's' }} in {{ leg.to }}
           </div>
-        </li>
-      </ol>
+        </template>
+      </div>
     </section>
   </main>
 </template>
