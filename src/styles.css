@@ -423,12 +423,21 @@ button:disabled {
 }
 
 .provider-attempts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border-radius: 999px;
   padding: 4px 8px;
   color: #0f5d57;
   background: #dcefed;
   font-size: 0.72rem;
   font-weight: 800;
+}
+
+.provider-attempts small {
+  color: inherit;
+  font-size: 0.65rem;
+  opacity: 0.8;
 }
 
 .provider-attempts .failed {

@@ -66,6 +66,25 @@ const currentPriceStatus = computed(() => {
 });
 
 const visiblePriceProgress = computed(() => priceProgress.value.slice(-8).reverse());
+const providerAttemptBadges = computed(() => {
+  const grouped = new Map();
+  for (const attempt of priceQuote.value?.attempts || []) {
+    const key = providerAttemptKey(attempt);
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      grouped.set(key, {
+        key,
+        provider: attempt.provider,
+        label: providerAttemptLabel(attempt),
+        failed: !attempt.ok,
+        count: 1
+      });
+    }
+  }
+  return [...grouped.values()];
+});
 
 function createStop(city = 'Doha', visitBefore = '', stayDays = 0) {
   return {
@@ -397,6 +416,22 @@ function appendPriceProgress(event) {
   priceProgress.value = [...priceProgress.value, event];
 }
 
+function providerAttemptKey(attempt) {
+  return [
+    attempt.provider || 'provider',
+    attempt.ok ? 'ok' : 'failed',
+    attempt.cached ? 'cached' : 'live',
+    attempt.skipped ? 'skipped' : 'attempted',
+    attempt.error || ''
+  ].join('|');
+}
+
+function providerAttemptLabel(attempt) {
+  if (attempt.ok) return `${attempt.provider} ${attempt.cached ? 'cached' : 'ready'}`;
+  if (attempt.skipped) return `${attempt.provider} skipped`;
+  return `${attempt.provider} ${attempt.error || 'failed'}`;
+}
+
 async function copyPricingLog() {
   const text = buildPricingLog();
   try {
@@ -638,9 +673,9 @@ optimize();
               <p>{{ event.message }}</p>
             </li>
           </ul>
-          <div v-if="priceQuote?.attempts?.length" class="provider-attempts">
-            <span v-for="(attempt, index) in priceQuote.attempts" :key="`${attempt.provider}-${attempt.route}-${index}`" :class="{ failed: !attempt.ok }">
-              {{ attempt.provider }} {{ attempt.ok ? (attempt.cached ? 'cached' : 'ready') : attempt.error }}
+          <div v-if="providerAttemptBadges.length" class="provider-attempts">
+            <span v-for="badge in providerAttemptBadges" :key="badge.key" :class="{ failed: badge.failed }">
+              {{ badge.label }}<small v-if="badge.count > 1">×{{ badge.count }}</small>
             </span>
           </div>
         </div>
