@@ -49,6 +49,7 @@ const PORTO_DUBAI_TRANSFER_HUBS = [
   'Zurich',
   'Amsterdam'
 ];
+const PORTO_RETURN_FALLBACK_HUBS = ['Warsaw', 'Madrid', 'Lisbon', 'Barcelona', 'Paris', 'Amsterdam', 'Milan'];
 const POPULAR_ROUTE_SEARCH_DAYS = Number(process.env.POPULAR_ROUTE_SEARCH_DAYS || 4);
 const LEG_QUOTE_CACHE_TTL_MS = 60 * 60 * 1000;
 let amadeusTokenCache = null;
@@ -67,7 +68,12 @@ export async function quoteFlightPrices(input, options = {}) {
   const quoted = await quoteNormalizedLegs(legs, { onProgress, phase: 'Current route', providerState });
   const quote = normalizeQuote('mixed', quoted.legs, quoted.attempts);
   const optimized = await optimizePopularTransferRoute(input.legs, quote, { onProgress, providerState });
-  const finalQuote = optimized || quote;
+  const recovered = await recoverMissingPortoReturnLeg(
+    optimized || quote,
+    optimized?.optimizedRouteLegs || input.legs,
+    { onProgress, providerState }
+  );
+  const finalQuote = recovered || optimized || quote;
   emitProgress(onProgress, 'pricing-complete', finalQuote.totalAmount
     ? `Finished pricing: $${finalQuote.totalAmount.toLocaleString()} USD.`
     : 'Finished pricing with partial or missing prices.', {
@@ -236,6 +242,123 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
     selectedAmount: best.quote.totalAmount
   });
   return combinedQuote;
+}
+
+async function recoverMissingPortoReturnLeg(quote, displayLegs, options = {}) {
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
+  const providerState = options.providerState || createProviderState();
+  if (Number.isFinite(quote.totalAmount)) return null;
+
+  const missingLeg = quote.legs.find((leg) =>
+    leg.to === 'Porto' &&
+    leg.mode !== 'bus' &&
+    !Number.isFinite(leg.amount) &&
+    leg.from !== 'Porto'
+  );
+  if (!missingLeg) return null;
+
+  const routes = PORTO_RETURN_FALLBACK_HUBS
+    .filter((hub) => hub !== missingLeg.from && hub !== missingLeg.to)
+    .map((hub) => [missingLeg.from, hub, 'Porto']);
+  if (routes.length === 0) return null;
+
+  emitProgress(onProgress, 'fallback-start', `Trying ${routes.length} fallback routes for missing ${missingLeg.from} to Porto price.`, {
+    route: routeLabel(missingLeg),
+    date: missingLeg.departureDate,
+    routeCount: routes.length
+  });
+
+  let best = null;
+  for (const route of routes) {
+    const candidateLabel = route.join(' -> ');
+    emitProgress(onProgress, 'candidate-start', `Trying fallback ${candidateLabel} on ${missingLeg.departureDate}.`, {
+      route,
+      date: missingLeg.departureDate,
+      fallbackFor: routeLabel(missingLeg)
+    });
+    const candidateDisplayLegs = buildLegsForRoute(route, missingLeg.departureDate);
+    const candidateQuoted = await quoteNormalizedLegs(normalizeLegs(candidateDisplayLegs), {
+      onProgress,
+      phase: 'Fallback option',
+      candidateRoute: candidateLabel,
+      providerState,
+      stopOnUnpriced: true
+    });
+    const candidateQuote = normalizeQuote('mixed', candidateQuoted.legs, candidateQuoted.attempts);
+    if (!Number.isFinite(candidateQuote.totalAmount)) {
+      emitProgress(onProgress, 'candidate-skip', `${candidateLabel}: not enough priced legs to replace ${routeLabel(missingLeg)}.`, {
+        route,
+        date: missingLeg.departureDate,
+        pricedLegCount: candidateQuote.pricedLegCount,
+        legCount: candidateQuote.legCount,
+        fallbackFor: routeLabel(missingLeg)
+      });
+      continue;
+    }
+
+    if (!best || candidateQuote.totalAmount < best.quote.totalAmount) {
+      best = { route, displayLegs: candidateDisplayLegs, quote: candidateQuote };
+      emitProgress(onProgress, 'candidate-best', `${candidateLabel} is the current best fallback at $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
+        route,
+        date: missingLeg.departureDate,
+        totalAmount: candidateQuote.totalAmount,
+        fallbackFor: routeLabel(missingLeg)
+      });
+    } else {
+      emitProgress(onProgress, 'candidate-result', `${candidateLabel}: $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
+        route,
+        date: missingLeg.departureDate,
+        totalAmount: candidateQuote.totalAmount,
+        fallbackFor: routeLabel(missingLeg)
+      });
+    }
+  }
+
+  if (!best) {
+    emitProgress(onProgress, 'fallback-complete', `No fallback route returned complete prices for ${routeLabel(missingLeg)}.`, {
+      route: routeLabel(missingLeg),
+      selectedRoute: null
+    });
+    return null;
+  }
+
+  const remainingQuoteLegs = quote.legs.filter((leg) => !sameQuoteLeg(leg, missingLeg));
+  const combinedQuote = normalizeQuote('mixed', [...remainingQuoteLegs, ...best.quote.legs], [
+    ...quote.attempts,
+    ...best.quote.attempts.map((attempt) => ({ ...attempt, fallbackCandidate: true }))
+  ]);
+  const baseDisplayLegs = Array.isArray(displayLegs) ? displayLegs : [];
+  combinedQuote.optimizedRouteLegs = replaceDisplayLeg(baseDisplayLegs, missingLeg, best.displayLegs);
+  if (quote.optimization) combinedQuote.optimization = quote.optimization;
+  combinedQuote.fallback = {
+    reason: `Found a priced fallback for ${missingLeg.from} to Porto.`,
+    replacedRoute: [missingLeg.from, 'Porto'],
+    selectedRoute: best.route,
+    departureDate: missingLeg.departureDate,
+    selectedAmount: best.quote.totalAmount
+  };
+  combinedQuote.message = `${combinedQuote.message} Replaced missing ${missingLeg.from} to Porto price via ${best.route.slice(1, -1).join(' / ')}.`;
+  emitProgress(onProgress, 'fallback-complete', `Selected fallback ${best.route.join(' -> ')} at $${best.quote.totalAmount.toLocaleString()} USD.`, {
+    selectedRoute: best.route,
+    date: missingLeg.departureDate,
+    selectedAmount: best.quote.totalAmount,
+    fallbackFor: routeLabel(missingLeg)
+  });
+  return combinedQuote;
+}
+
+function replaceDisplayLeg(displayLegs, replacedLeg, replacementLegs) {
+  const index = displayLegs.findIndex((leg) => sameDisplayLeg(leg, replacedLeg));
+  if (index === -1) return displayLegs;
+  return [
+    ...displayLegs.slice(0, index),
+    ...replacementLegs,
+    ...displayLegs.slice(index + 1)
+  ];
+}
+
+function sameQuoteLeg(left, right) {
+  return left.from === right.from && left.to === right.to && left.departureDate === right.departureDate;
 }
 
 function findPopularRouteTarget(legs) {
@@ -440,17 +563,19 @@ async function quoteLeg(leg, options = {}) {
       route: `${leg.origin}-${leg.destination}`,
       russianDirection: isRussianDirection(leg)
     });
-    emitProgress(onProgress, providerProgressStep(result), providerProgressMessage(provider, leg, result), {
-      provider,
-      route: routeLabel(leg),
-      date: leg.departureDate,
-      amount: result.quote?.amount || null,
-      cached: result.summary.cached === true,
-      skipped: result.summary.skipped === true,
-      error: result.summary.error || result.quote?.error || null,
-      phase: options.phase,
-      candidateRoute: options.candidateRoute || null
-    });
+    if (!result.summary.skipped || markProviderSkipLogged(providerState, provider)) {
+      emitProgress(onProgress, providerProgressStep(result), providerProgressMessage(provider, leg, result), {
+        provider,
+        route: routeLabel(leg),
+        date: leg.departureDate,
+        amount: result.quote?.amount || null,
+        cached: result.summary.cached === true,
+        skipped: result.summary.skipped === true,
+        error: result.summary.error || result.quote?.error || null,
+        phase: options.phase,
+        candidateRoute: options.candidateRoute || null
+      });
+    }
     if (!result.summary.ok && shouldDisableProvider(provider, result.summary.error) && disableProvider(providerState, provider, result.summary.error)) {
       emitProgress(onProgress, 'provider-disabled', `${providerLabel(provider)} will be skipped for the rest of this search: ${result.summary.error}.`, {
         provider,
@@ -534,7 +659,10 @@ function providerProgressStep(result) {
 }
 
 function createProviderState() {
-  return { disabledProviders: new Map() };
+  return {
+    disabledProviders: new Map(),
+    loggedSkippedProviders: new Set()
+  };
 }
 
 function providerDisabledReason(providerState, provider) {
@@ -544,6 +672,12 @@ function providerDisabledReason(providerState, provider) {
 function disableProvider(providerState, provider, reason) {
   if (providerState.disabledProviders.has(provider)) return false;
   providerState.disabledProviders.set(provider, reason);
+  return true;
+}
+
+function markProviderSkipLogged(providerState, provider) {
+  if (providerState.loggedSkippedProviders.has(provider)) return false;
+  providerState.loggedSkippedProviders.add(provider);
   return true;
 }
 

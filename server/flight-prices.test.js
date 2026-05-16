@@ -372,6 +372,51 @@ describe('flight price providers', () => {
     assert.ok(events.some((event) => event.step === 'compare-start' && event.message.includes('Porto to Dubai')));
     assert.ok(events.some((event) => event.step === 'candidate-best' && event.message.includes('Porto -> Madrid -> Dubai')));
   });
+
+  it('replaces a missing Europe to Porto return price with a priced fallback hub route', async () => {
+    clearFlightPriceCache();
+    const originalSerpApiKey = process.env.SERPAPI_KEY;
+    const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
+    const originalYandexKey = process.env.YANDEX_RASP_API_KEY;
+    const originalFetch = globalThis.fetch;
+    delete process.env.SERPAPI_KEY;
+    process.env.TRAVELPAYOUTS_TOKEN = 'test-aviasales-token';
+    delete process.env.YANDEX_RASP_API_KEY;
+
+    const routePrices = new Map([
+      ['GDN-WAW', 40],
+      ['WAW-OPO', 90],
+      ['GDN-MAD', 120],
+      ['MAD-OPO', 80]
+    ]);
+    const events = [];
+    globalThis.fetch = async (url) => {
+      const params = new URL(url).searchParams;
+      const route = `${params.get('origin')}-${params.get('destination')}`;
+      const price = routePrices.get(route);
+      return Response.json({
+        success: true,
+        data: price ? [{ price, currency: 'usd', airline: 'Test Air', search_id: `search-${route}` }] : []
+      });
+    };
+
+    const quote = await quoteFlightPrices(
+      { legs: [{ from: 'Gdansk', to: 'Porto', departOn: '2026-06-13', mode: 'flight' }] },
+      { onProgress: (event) => events.push(event) }
+    );
+
+    globalThis.fetch = originalFetch;
+    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
+    restoreEnv('TRAVELPAYOUTS_TOKEN', originalTravelpayoutsToken);
+    restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
+    clearFlightPriceCache();
+
+    assert.equal(quote.totalAmount, 130);
+    assert.deepEqual(quote.fallback.selectedRoute, ['Gdansk', 'Warsaw', 'Porto']);
+    assert.deepEqual(quote.optimizedRouteLegs.map((leg) => `${leg.from}-${leg.to}`), ['Gdansk-Warsaw', 'Warsaw-Porto']);
+    assert.ok(events.some((event) => event.step === 'fallback-start'));
+    assert.ok(events.some((event) => event.step === 'fallback-complete'));
+  });
 });
 
 function restoreEnv(name, value) {
