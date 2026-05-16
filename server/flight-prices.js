@@ -143,6 +143,7 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
 
   const currentSuffixQuote = quoteTotalForDisplayLegs(currentSuffix, initialQuote.legs);
   let best = null;
+  const comparableCandidates = [];
   const routes = popularTransferRoutes(direction);
   const dates = dateWindow(currentSuffix[0].departOn, POPULAR_ROUTE_SEARCH_DAYS);
 
@@ -189,13 +190,15 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
         continue;
       }
 
+      const candidate = {
+        route,
+        departureDate,
+        displayLegs: candidateDisplayLegs,
+        quote: candidateQuote
+      };
+      comparableCandidates.push(candidate);
       if (!best || candidateQuote.totalAmount < best.quote.totalAmount) {
-        best = {
-          route,
-          departureDate,
-          displayLegs: candidateDisplayLegs,
-          quote: candidateQuote
-        };
+        best = candidate;
         emitProgress(onProgress, 'candidate-best', `${candidateLabel} on ${departureDate} is the current best at $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
           route,
           date: departureDate,
@@ -233,11 +236,22 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
     ...initialQuote.attempts,
     ...best.quote.attempts.map((attempt) => ({ ...attempt, optimizedCandidate: true }))
   ]);
+  const rankedCandidates = [...comparableCandidates]
+    .sort((left, right) => left.quote.totalAmount - right.quote.totalAmount)
+    .map((candidate) => buildOptimizedRouteOption({
+      candidate,
+      currentSuffix,
+      prefixDisplayLegs,
+      tailDisplayLegs,
+      prefixQuoteLegs,
+      tailQuoteLegs
+    }));
   combinedQuote.optimizedRouteLegs = [
     ...prefixDisplayLegs,
     ...copyStayToReplacement(currentSuffix, best.displayLegs),
     ...tailDisplayLegs
   ];
+  combinedQuote.optimizedRouteOptions = rankedCandidates;
   combinedQuote.optimization = {
     reason: `Found a cheaper priced ${direction.from} to ${direction.to} option.`,
     replacedRoute: currentSuffix.map((leg) => leg.from).concat(currentSuffix.at(-1).to),
@@ -254,6 +268,33 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
     selectedAmount: best.quote.totalAmount
   });
   return combinedQuote;
+}
+
+function buildOptimizedRouteOption({
+  candidate,
+  currentSuffix,
+  prefixDisplayLegs,
+  tailDisplayLegs,
+  prefixQuoteLegs,
+  tailQuoteLegs
+}) {
+  const routeLegs = [
+    ...prefixDisplayLegs,
+    ...copyStayToReplacement(currentSuffix, candidate.displayLegs),
+    ...tailDisplayLegs
+  ];
+  const quoteLegs = [...prefixQuoteLegs, ...candidate.quote.legs, ...tailQuoteLegs];
+  const quote = normalizeQuote('mixed', quoteLegs, []);
+  return {
+    route: candidate.route,
+    departureDate: candidate.departureDate,
+    amount: candidate.quote.totalAmount,
+    totalAmount: quote.totalAmount,
+    pricedLegCount: quote.pricedLegCount,
+    legCount: quote.legCount,
+    routeLegs,
+    legs: quoteLegs
+  };
 }
 
 function candidatePreservesTailStay(candidateLegs, replacedLegs, tailLegs) {
@@ -366,6 +407,11 @@ async function recoverMissingPortoReturnLeg(quote, displayLegs, options = {}) {
   ]);
   const baseDisplayLegs = Array.isArray(displayLegs) ? displayLegs : [];
   combinedQuote.optimizedRouteLegs = replaceDisplayLeg(baseDisplayLegs, missingLeg, best.displayLegs);
+  if (Array.isArray(quote.optimizedRouteOptions)) {
+    combinedQuote.optimizedRouteOptions = quote.optimizedRouteOptions.map((option) =>
+      replaceMissingLegInRouteOption(option, missingLeg, best.displayLegs, best.quote.legs)
+    );
+  }
   if (quote.optimization) combinedQuote.optimization = quote.optimization;
   combinedQuote.fallback = {
     reason: `Found a priced fallback for ${missingLeg.from} to Porto.`,
@@ -382,6 +428,22 @@ async function recoverMissingPortoReturnLeg(quote, displayLegs, options = {}) {
     fallbackFor: routeLabel(missingLeg)
   });
   return combinedQuote;
+}
+
+function replaceMissingLegInRouteOption(option, missingLeg, replacementDisplayLegs, replacementQuoteLegs) {
+  const legs = [
+    ...option.legs.filter((leg) => !sameQuoteLeg(leg, missingLeg)),
+    ...replacementQuoteLegs
+  ];
+  const quote = normalizeQuote('mixed', legs, []);
+  return {
+    ...option,
+    totalAmount: quote.totalAmount,
+    pricedLegCount: quote.pricedLegCount,
+    legCount: quote.legCount,
+    routeLegs: replaceDisplayLeg(option.routeLegs, missingLeg, replacementDisplayLegs),
+    legs
+  };
 }
 
 function replaceDisplayLeg(displayLegs, replacedLeg, replacementLegs) {

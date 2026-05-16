@@ -389,6 +389,8 @@ describe('flight price providers', () => {
       ['MAD-DXB-2026-05-21', 254],
       ['OPO-BCN-2026-05-20', 30],
       ['BCN-DXB-2026-05-20', 320],
+      ['OPO-ATH-2026-05-20', 110],
+      ['ATH-DXB-2026-05-20', 237],
       ['DXB-MOW-2026-05-23', 520],
       ['MOW-KGD-2026-06-06', 97],
       ['GDN-OPO-2026-06-13', 249]
@@ -427,12 +429,17 @@ describe('flight price providers', () => {
     restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
     clearFlightPriceCache();
 
-    assert.equal(quote.totalAmount, 1216);
-    assert.deepEqual(quote.optimization.selectedRoute, ['Porto', 'Barcelona', 'Dubai']);
+    assert.equal(quote.totalAmount, 1213);
+    assert.deepEqual(quote.optimization.selectedRoute, ['Porto', 'Athens', 'Dubai']);
     assert.equal(quote.optimizedRouteLegs[1].to, 'Dubai');
     assert.equal(quote.optimizedRouteLegs[1].stayDaysAfter, 3);
     assert.equal(quote.optimizedRouteLegs[2].from, 'Dubai');
     assert.equal(quote.optimizedRouteLegs[2].departOn, '2026-05-23');
+    assert.deepEqual(quote.optimizedRouteOptions.slice(0, 2).map((option) => option.route), [
+      ['Porto', 'Athens', 'Dubai'],
+      ['Porto', 'Barcelona', 'Dubai']
+    ]);
+    assert.equal(quote.optimizedRouteOptions.some((option) => option.route.join('-') === 'Porto-Madrid-Dubai'), false);
     assert.ok(events.some((event) => event.step === 'candidate-skip' && event.details?.reason === 'stay-time'));
   });
 

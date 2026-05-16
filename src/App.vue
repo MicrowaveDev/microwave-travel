@@ -37,6 +37,7 @@ const priceProgress = ref([]);
 const inputChangeLog = ref([]);
 const copyLogStatus = ref('');
 const logsCollapsed = ref(false);
+const selectedTransferOptionIndex = ref(0);
 let optimizeDebounce = null;
 let priceRequestId = 0;
 let pricingAbortController = null;
@@ -55,7 +56,7 @@ const routeSegments = computed(() => plan.value?.legs || []);
 const priceLabel = computed(() => {
   if (pricingLoading.value) return 'Loading';
   if (!priceQuote.value) return 'No price';
-  if (priceQuote.value.totalAmount) return `$${priceQuote.value.totalAmount.toLocaleString()}`;
+  if (activeTotalAmount.value) return `$${activeTotalAmount.value.toLocaleString()}`;
   if (priceQuote.value.pricedLegCount > 0) return 'Partial';
   return priceQuote.value.provider ? 'No price' : 'Needs key';
 });
@@ -66,6 +67,10 @@ const currentPriceStatus = computed(() => {
 });
 
 const visiblePriceProgress = computed(() => priceProgress.value.slice(-8).reverse());
+const transferRouteOptions = computed(() => priceQuote.value?.optimizedRouteOptions || []);
+const activeTransferOption = computed(() => transferRouteOptions.value[selectedTransferOptionIndex.value] || null);
+const activePriceLegs = computed(() => activeTransferOption.value?.legs || priceQuote.value?.legs || []);
+const activeTotalAmount = computed(() => activeTransferOption.value?.totalAmount || priceQuote.value?.totalAmount || null);
 const providerAttemptBadges = computed(() => {
   const grouped = new Map();
   for (const attempt of priceQuote.value?.attempts || []) {
@@ -289,6 +294,7 @@ async function optimize() {
   error.value = '';
   priceQuote.value = null;
   priceProgress.value = [];
+  selectedTransferOptionIndex.value = 0;
   copyLogStatus.value = '';
 
   try {
@@ -354,13 +360,11 @@ async function fetchPrices(routePlan = plan.value) {
     const payload = await readPriceStream(response, requestId);
     if (requestId !== priceRequestId || !payload) return;
     priceQuote.value = payload;
-    if (payload.optimizedRouteLegs?.length) {
-      plan.value = {
-        ...routePlan,
-        legs: payload.optimizedRouteLegs,
-        totalHours: Math.round(payload.optimizedRouteLegs.reduce((sum, leg) => sum + leg.hours, 0) * 10) / 10,
-        totalDistanceKm: Math.round(payload.optimizedRouteLegs.reduce((sum, leg) => sum + leg.distanceKm, 0))
-      };
+    selectedTransferOptionIndex.value = 0;
+    if (payload.optimizedRouteOptions?.length) {
+      applyTransferOption(0, routePlan);
+    } else if (payload.optimizedRouteLegs?.length) {
+      applyRouteLegs(payload.optimizedRouteLegs, routePlan);
     }
   } catch (caught) {
     if (caught.name === 'AbortError') return;
@@ -432,6 +436,36 @@ function providerAttemptLabel(attempt) {
   return `${attempt.provider} ${attempt.error || 'failed'}`;
 }
 
+function selectTransferOption(index) {
+  if (!transferRouteOptions.value[index]) return;
+  selectedTransferOptionIndex.value = index;
+  applyTransferOption(index);
+}
+
+function applyTransferOption(index, basePlan = plan.value) {
+  const option = transferRouteOptions.value[index];
+  if (!option?.routeLegs?.length) return;
+  applyRouteLegs(option.routeLegs, basePlan);
+}
+
+function applyRouteLegs(legs, basePlan = plan.value) {
+  if (!basePlan) return;
+  plan.value = {
+    ...basePlan,
+    legs,
+    totalHours: Math.round(legs.reduce((sum, leg) => sum + leg.hours, 0) * 10) / 10,
+    totalDistanceKm: Math.round(legs.reduce((sum, leg) => sum + leg.distanceKm, 0))
+  };
+}
+
+function transferOptionLabel(option) {
+  return option.route.join(' -> ');
+}
+
+function transferOptionAmount(option) {
+  return typeof option.totalAmount === 'number' ? `$${option.totalAmount.toLocaleString()}` : 'Partial';
+}
+
 async function copyPricingLog() {
   const text = buildPricingLog();
   try {
@@ -481,7 +515,15 @@ function buildPricingLog() {
           pricedLegCount: quote.pricedLegCount,
           legCount: quote.legCount,
           message: quote.message,
-          optimization: quote.optimization || null
+          optimization: quote.optimization || null,
+          optimizedRouteOptions: (quote.optimizedRouteOptions || []).map((option) => ({
+            route: option.route,
+            departureDate: option.departureDate,
+            amount: option.amount,
+            totalAmount: option.totalAmount,
+            pricedLegCount: option.pricedLegCount,
+            legCount: option.legCount
+          }))
         }, null, 2)
       : 'Pricing is still running or no quote is available.',
     '',
@@ -522,19 +564,19 @@ function copyLogWithFallback(text) {
 
 function legPrice(index) {
   const leg = plan.value?.legs?.[index];
-  const price = priceQuote.value?.legs?.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.amount;
+  const price = activePriceLegs.value.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.amount;
   return typeof price === 'number' ? `$${price.toLocaleString()}` : null;
 }
 
 function legProvider(index) {
   const leg = plan.value?.legs?.[index];
-  return priceQuote.value?.legs?.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.provider || null;
+  return activePriceLegs.value.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.provider || null;
 }
 
 function legPriceError(index) {
   const leg = plan.value?.legs?.[index];
   if (leg?.mode === 'bus') return 'Ground transfer: check bus ticket and border requirements separately.';
-  return priceQuote.value?.legs?.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.error || null;
+  return activePriceLegs.value.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.error || null;
 }
 
 watch(
@@ -683,6 +725,20 @@ optimize();
 
       <div v-if="plan?.warnings.length" class="warning-list">
         <p v-for="warning in plan.warnings" :key="warning">{{ warning }}</p>
+      </div>
+
+      <div v-if="transferRouteOptions.length > 1" class="transfer-options" aria-label="Transfer route options">
+        <button
+          v-for="(option, index) in transferRouteOptions"
+          :key="`${option.route.join('-')}-${option.departureDate}`"
+          type="button"
+          :class="{ active: selectedTransferOptionIndex === index }"
+          @click="selectTransferOption(index)"
+        >
+          <span>{{ transferOptionLabel(option) }}</span>
+          <strong>{{ transferOptionAmount(option) }}</strong>
+          <small>{{ option.departureDate }}</small>
+        </button>
       </div>
 
       <div v-if="plan" class="legs">

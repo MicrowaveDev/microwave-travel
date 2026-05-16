@@ -445,6 +445,54 @@ button:disabled {
   background: #fff4d8;
 }
 
+.transfer-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.transfer-options button {
+  display: grid;
+  gap: 2px;
+  min-width: 176px;
+  max-width: 260px;
+  border: 1px solid #c8d8d6;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #385057;
+  background: #ffffff;
+  text-align: left;
+}
+
+.transfer-options button.active {
+  border-color: #0f766e;
+  color: #0f5d57;
+  background: #e9f7f5;
+}
+
+.transfer-options span,
+.transfer-options strong,
+.transfer-options small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-options span {
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.transfer-options strong {
+  font-size: 0.9rem;
+}
+
+.transfer-options small {
+  color: inherit;
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
 .legs {
   display: grid;
   gap: 8px;
