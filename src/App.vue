@@ -463,7 +463,7 @@ function transferOptionLabel(option) {
 }
 
 function transferOptionAmount(option) {
-  return typeof option.totalAmount === 'number' ? `$${option.totalAmount.toLocaleString()}` : 'Partial';
+  return typeof option.amount === 'number' ? `$${option.amount.toLocaleString()}` : 'Partial';
 }
 
 async function copyPricingLog() {
@@ -737,7 +737,7 @@ optimize();
         >
           <span>{{ transferOptionLabel(option) }}</span>
           <strong>{{ transferOptionAmount(option) }}</strong>
-          <small>{{ option.departureDate }}</small>
+          <small>Transfer · {{ option.departureDate }}</small>
         </button>
       </div>
 
