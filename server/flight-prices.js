@@ -52,6 +52,7 @@ const PORTO_DUBAI_TRANSFER_HUBS = [
 const PORTO_RETURN_FALLBACK_HUBS = ['Warsaw', 'Madrid', 'Lisbon', 'Barcelona', 'Paris', 'Amsterdam', 'Milan'];
 const POPULAR_ROUTE_SEARCH_DAYS = Number(process.env.POPULAR_ROUTE_SEARCH_DAYS || 4);
 const LEG_QUOTE_CACHE_TTL_MS = 60 * 60 * 1000;
+const AVIASALES_SEARCH_BASE_URL = process.env.AVIASALES_SEARCH_BASE_URL || 'https://search.aviasales.com/flights/';
 let amadeusTokenCache = null;
 
 export async function quoteFlightPrices(input, options = {}) {
@@ -940,7 +941,7 @@ function normalizeQuote(provider, legs, attempts = []) {
     totalAmount: priced.length === legs.length ? roundMoney(priced.reduce((sum, leg) => sum + leg.amount, 0)) : null,
     pricedLegCount: priced.length,
     legCount: legs.length,
-    legs: legs.map((leg) => ({
+    legs: legs.map((leg) => addBookingLink({
       ...leg,
       amount: Number.isFinite(leg.amount) ? roundMoney(leg.amount) : null
     })),
@@ -954,6 +955,44 @@ function normalizeQuote(provider, legs, attempts = []) {
             ? 'Configured providers did not return USD prices for this route.'
             : 'No flight price provider is configured. Add provider keys to the server environment.'
   };
+}
+
+function addBookingLink(leg) {
+  if (leg.mode === 'bus' || !leg.origin || !leg.destination || !leg.departureDate) return leg;
+  const url = buildAviasalesSearchUrl(leg);
+  if (!url) return leg;
+  const hasAffiliateMarker = Boolean(process.env.TRAVELPAYOUTS_MARKER);
+  return {
+    ...leg,
+    bookingUrl: url,
+    bookingProvider: 'aviasales',
+    bookingLabel: hasAffiliateMarker ? 'Affiliate search link' : 'Search booking options',
+    bookingNote: hasAffiliateMarker
+      ? 'Affiliate link; final checkout price may differ.'
+      : 'Search link; compare final checkout price before booking.'
+  };
+}
+
+function buildAviasalesSearchUrl(leg) {
+  try {
+    const url = new URL(AVIASALES_SEARCH_BASE_URL);
+    url.search = new URLSearchParams({
+      origin_iata: leg.origin,
+      destination_iata: leg.destination,
+      depart_date: leg.departureDate,
+      oneway: '1',
+      adults: '1',
+      children: '0',
+      infants: '0',
+      trip_class: '0',
+      currency: 'USD',
+      locale: 'en',
+      ...(process.env.TRAVELPAYOUTS_MARKER ? { marker: process.env.TRAVELPAYOUTS_MARKER } : {})
+    }).toString();
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 function configuredProviders() {

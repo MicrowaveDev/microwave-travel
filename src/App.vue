@@ -573,6 +573,16 @@ function legProvider(index) {
   return activePriceLegs.value.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.provider || null;
 }
 
+function legBooking(index) {
+  const leg = plan.value?.legs?.[index];
+  return activePriceLegs.value.find((pricedLeg) =>
+    pricedLeg.from === leg?.from &&
+    pricedLeg.to === leg?.to &&
+    pricedLeg.departureDate === leg?.departOn &&
+    pricedLeg.bookingUrl
+  ) || null;
+}
+
 function legPriceError(index) {
   const leg = plan.value?.legs?.[index];
   if (leg?.mode === 'bus') return 'Ground transfer: check bus ticket and border requirements separately.';
@@ -755,6 +765,16 @@ optimize();
                 {{ legPrice(index) }} USD<span v-if="legProvider(index)"> via {{ legProvider(index) }}</span>
               </p>
               <p v-else-if="legPriceError(index)" class="leg-price-missing">{{ legPriceError(index) }}</p>
+              <a
+                v-if="legBooking(index)"
+                class="booking-link"
+                :href="legBooking(index).bookingUrl"
+                target="_blank"
+                rel="noreferrer"
+                :title="legBooking(index).bookingNote"
+              >
+                {{ legBooking(index).bookingLabel }}
+              </a>
               <small>{{ leg.note }} Reliability {{ Math.round(leg.reliability * 100) }}%.</small>
             </div>
           </article>

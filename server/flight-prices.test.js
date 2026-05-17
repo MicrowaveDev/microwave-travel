@@ -180,10 +180,12 @@ describe('flight price providers', () => {
     clearFlightPriceCache();
     const originalSerpApiKey = process.env.SERPAPI_KEY;
     const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
+    const originalTravelpayoutsMarker = process.env.TRAVELPAYOUTS_MARKER;
     const originalYandexKey = process.env.YANDEX_RASP_API_KEY;
     const originalFetch = globalThis.fetch;
     process.env.SERPAPI_KEY = 'test-serpapi-key';
     process.env.TRAVELPAYOUTS_TOKEN = 'test-aviasales-token';
+    process.env.TRAVELPAYOUTS_MARKER = 'partner123';
     delete process.env.YANDEX_RASP_API_KEY;
 
     let serpApiCalls = 0;
@@ -215,10 +217,16 @@ describe('flight price providers', () => {
     globalThis.fetch = originalFetch;
     restoreEnv('SERPAPI_KEY', originalSerpApiKey);
     restoreEnv('TRAVELPAYOUTS_TOKEN', originalTravelpayoutsToken);
+    restoreEnv('TRAVELPAYOUTS_MARKER', originalTravelpayoutsMarker);
     restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
     clearFlightPriceCache();
 
     assert.equal(quote.totalAmount, 246);
+    assert.equal(new URL(quote.legs[0].bookingUrl).searchParams.get('marker'), 'partner123');
+    assert.equal(new URL(quote.legs[0].bookingUrl).searchParams.get('origin_iata'), 'OPO');
+    assert.equal(new URL(quote.legs[0].bookingUrl).searchParams.get('destination_iata'), 'LIS');
+    assert.equal(new URL(quote.legs[0].bookingUrl).searchParams.get('depart_date'), '2026-05-20');
+    assert.equal(quote.legs[0].bookingLabel, 'Affiliate search link');
     assert.equal(serpApiCalls, 1);
     assert.equal(aviasalesCalls, 2);
     assert.ok(events.some((event) => event.step === 'provider-disabled' && event.details.provider === 'serpapi'));

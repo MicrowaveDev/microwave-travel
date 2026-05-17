@@ -547,6 +547,25 @@ h2 {
   font-weight: 800;
 }
 
+.booking-link {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 6px;
+  border: 1px solid #b8d6d2;
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: #0f5d57;
+  background: #edf8f6;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.booking-link:hover {
+  border-color: #0f766e;
+  background: #dcefed;
+}
+
 .stay-separator {
   padding: 0 12px 0 56px;
   color: #0f5d57;
