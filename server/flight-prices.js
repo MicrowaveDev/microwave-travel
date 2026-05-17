@@ -145,6 +145,7 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   const currentSuffixQuote = quoteTotalForDisplayLegs(currentSuffix, initialQuote.legs);
   let best = null;
   const comparableCandidates = [];
+  const skippedCandidates = [];
   const routes = popularTransferRoutes(direction);
   const dates = dateWindow(currentSuffix[0].departOn, POPULAR_ROUTE_SEARCH_DAYS);
 
@@ -164,11 +165,20 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
         date: departureDate
       });
       const candidateDisplayLegs = buildLegsForRoute(route, departureDate);
-      if (!candidatePreservesTailStay(candidateDisplayLegs, currentSuffix, originalLegs.slice(endIndex))) {
+      const stayConflict = candidateTailStayConflict(candidateDisplayLegs, currentSuffix, originalLegs.slice(endIndex));
+      if (stayConflict) {
+        skippedCandidates.push(buildSkippedRouteOption({
+          route,
+          departureDate,
+          reason: 'stay-time',
+          message: stayConflict.message,
+          details: stayConflict
+        }));
         emitProgress(onProgress, 'candidate-skip', `${candidateLabel} on ${departureDate}: does not leave enough stay time before the next leg.`, {
           route,
           date: departureDate,
-          reason: 'stay-time'
+          reason: 'stay-time',
+          ...stayConflict
         });
         continue;
       }
@@ -182,6 +192,16 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
       });
       const candidateQuote = normalizeQuote('mixed', candidateQuoted.legs, candidateQuoted.attempts);
       if (!Number.isFinite(candidateQuote.totalAmount)) {
+        skippedCandidates.push(buildSkippedRouteOption({
+          route,
+          departureDate,
+          reason: 'missing-price',
+          message: 'Not enough priced legs to compare.',
+          details: {
+            pricedLegCount: candidateQuote.pricedLegCount,
+            legCount: candidateQuote.legCount
+          }
+        }));
         emitProgress(onProgress, 'candidate-skip', `${candidateLabel} on ${departureDate}: not enough priced legs to compare.`, {
           route,
           date: departureDate,
@@ -253,6 +273,7 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
     ...tailDisplayLegs
   ];
   combinedQuote.optimizedRouteOptions = rankedCandidates;
+  combinedQuote.optimizedRouteSkippedOptions = skippedCandidates;
   combinedQuote.optimization = {
     reason: `Found a cheaper priced ${direction.from} to ${direction.to} option.`,
     replacedRoute: currentSuffix.map((leg) => leg.from).concat(currentSuffix.at(-1).to),
@@ -269,6 +290,16 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
     selectedAmount: best.quote.totalAmount
   });
   return combinedQuote;
+}
+
+function buildSkippedRouteOption({ route, departureDate, reason, message, details = {} }) {
+  return {
+    route,
+    departureDate,
+    reason,
+    message,
+    details
+  };
 }
 
 function buildOptimizedRouteOption({
@@ -298,16 +329,25 @@ function buildOptimizedRouteOption({
   };
 }
 
-function candidatePreservesTailStay(candidateLegs, replacedLegs, tailLegs) {
+function candidateTailStayConflict(candidateLegs, replacedLegs, tailLegs) {
   const staySource = replacedLegs.at(-1);
   const stayHours = Number(staySource?.stayHoursAfter) || 0;
   const firstTailLeg = tailLegs[0];
-  if (!stayHours || !firstTailLeg) return true;
+  if (!stayHours || !firstTailLeg) return null;
 
   const arrival = new Date(`${candidateLegs.at(-1)?.arriveBy}T00:00:00.000Z`);
   const nextDeparture = new Date(`${firstTailLeg.departOn || firstTailLeg.departureDate}T00:00:00.000Z`);
-  if (Number.isNaN(arrival.getTime()) || Number.isNaN(nextDeparture.getTime())) return true;
-  return addHoursToDate(arrival, stayHours) <= nextDeparture;
+  if (Number.isNaN(arrival.getTime()) || Number.isNaN(nextDeparture.getTime())) return null;
+  const requiredDeparture = addHoursToDate(arrival, stayHours);
+  if (requiredDeparture <= nextDeparture) return null;
+  const stayDays = Number(staySource?.stayDaysAfter) || stayHours / 24;
+  return {
+    message: `Needs ${formatStayDays(stayDays)} in ${staySource.to}, but the next leg leaves on ${formatDateOnly(nextDeparture)}.`,
+    arrivalDate: formatDateOnly(arrival),
+    requiredDepartureDate: formatDateOnly(requiredDeparture),
+    nextDepartureDate: formatDateOnly(nextDeparture),
+    stayDays
+  };
 }
 
 function copyStayToReplacement(replacedLegs, replacementLegs) {
@@ -412,6 +452,9 @@ async function recoverMissingPortoReturnLeg(quote, displayLegs, options = {}) {
     combinedQuote.optimizedRouteOptions = quote.optimizedRouteOptions.map((option) =>
       replaceMissingLegInRouteOption(option, missingLeg, best.displayLegs, best.quote.legs)
     );
+  }
+  if (Array.isArray(quote.optimizedRouteSkippedOptions)) {
+    combinedQuote.optimizedRouteSkippedOptions = quote.optimizedRouteSkippedOptions;
   }
   if (quote.optimization) combinedQuote.optimization = quote.optimization;
   combinedQuote.fallback = {
@@ -1073,6 +1116,15 @@ function providerError(payload, fallback) {
 
 function addHoursToDate(date, hours) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function formatDateOnly(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function formatStayDays(days) {
+  const rounded = Math.round(days * 10) / 10;
+  return `${rounded} day${rounded === 1 ? '' : 's'}`;
 }
 
 function roundMoney(value) {

@@ -470,6 +470,18 @@ button:disabled {
   background: #e9f7f5;
 }
 
+.transfer-options button.skipped {
+  border-style: dashed;
+  color: #6c5960;
+  background: #f7f1f3;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.transfer-options button.skipped strong {
+  color: #8a4b5d;
+}
+
 .transfer-options span,
 .transfer-options strong,
 .transfer-options small {

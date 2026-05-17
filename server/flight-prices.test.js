@@ -448,6 +448,14 @@ describe('flight price providers', () => {
       ['Porto', 'Barcelona', 'Dubai']
     ]);
     assert.equal(quote.optimizedRouteOptions.some((option) => option.route.join('-') === 'Porto-Madrid-Dubai'), false);
+    const skippedMadrid = quote.optimizedRouteSkippedOptions.find((option) =>
+      option.route.join('-') === 'Porto-Madrid-Dubai' &&
+      option.departureDate === '2026-05-21'
+    );
+    assert.equal(skippedMadrid.reason, 'stay-time');
+    assert.equal(skippedMadrid.departureDate, '2026-05-21');
+    assert.equal(skippedMadrid.details.requiredDepartureDate, '2026-05-24');
+    assert.equal(skippedMadrid.details.nextDepartureDate, '2026-05-23');
     assert.ok(events.some((event) => event.step === 'candidate-skip' && event.details?.reason === 'stay-time'));
   });
 

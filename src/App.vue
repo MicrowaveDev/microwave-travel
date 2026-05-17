@@ -68,6 +68,7 @@ const currentPriceStatus = computed(() => {
 
 const visiblePriceProgress = computed(() => priceProgress.value.slice(-8).reverse());
 const transferRouteOptions = computed(() => priceQuote.value?.optimizedRouteOptions || []);
+const transferSkippedOptions = computed(() => priceQuote.value?.optimizedRouteSkippedOptions || []);
 const activeTransferOption = computed(() => transferRouteOptions.value[selectedTransferOptionIndex.value] || null);
 const activePriceLegs = computed(() => activeTransferOption.value?.legs || priceQuote.value?.legs || []);
 const activeTotalAmount = computed(() => activeTransferOption.value?.totalAmount || priceQuote.value?.totalAmount || null);
@@ -466,6 +467,13 @@ function transferOptionAmount(option) {
   return typeof option.amount === 'number' ? `$${option.amount.toLocaleString()}` : 'Partial';
 }
 
+function transferSkipReason(option) {
+  if (option.message) return option.message;
+  if (option.reason === 'stay-time') return 'Does not preserve required stay time.';
+  if (option.reason === 'missing-price') return 'Not enough priced legs to compare.';
+  return 'Skipped during pricing.';
+}
+
 async function copyPricingLog() {
   const text = buildPricingLog();
   try {
@@ -523,6 +531,13 @@ function buildPricingLog() {
             totalAmount: option.totalAmount,
             pricedLegCount: option.pricedLegCount,
             legCount: option.legCount
+          })),
+          optimizedRouteSkippedOptions: (quote.optimizedRouteSkippedOptions || []).map((option) => ({
+            route: option.route,
+            departureDate: option.departureDate,
+            reason: option.reason,
+            message: option.message,
+            details: option.details
           }))
         }, null, 2)
       : 'Pricing is still running or no quote is available.',
@@ -737,7 +752,7 @@ optimize();
         <p v-for="warning in plan.warnings" :key="warning">{{ warning }}</p>
       </div>
 
-      <div v-if="transferRouteOptions.length > 1" class="transfer-options" aria-label="Transfer route options">
+      <div v-if="transferRouteOptions.length || transferSkippedOptions.length" class="transfer-options" aria-label="Transfer route options">
         <button
           v-for="(option, index) in transferRouteOptions"
           :key="`${option.route.join('-')}-${option.departureDate}`"
@@ -748,6 +763,18 @@ optimize();
           <span>{{ transferOptionLabel(option) }}</span>
           <strong>{{ transferOptionAmount(option) }}</strong>
           <small>Transfer · {{ option.departureDate }}</small>
+        </button>
+        <button
+          v-for="option in transferSkippedOptions"
+          :key="`skipped-${option.route.join('-')}-${option.departureDate}-${option.reason}`"
+          class="skipped"
+          type="button"
+          disabled
+          :title="transferSkipReason(option)"
+        >
+          <span>{{ transferOptionLabel(option) }}</span>
+          <strong>Skipped</strong>
+          <small>{{ transferSkipReason(option) }}</small>
         </button>
       </div>
 
