@@ -116,12 +116,9 @@ function assertMockScenario(quote) {
   if (quote.totalAmount !== 1197) {
     throw new Error(`Expected mock total $1,197 USD, got ${formatMoney(quote.totalAmount)}.`);
   }
-  const skippedMadrid = quote.optimizedRouteSkippedOptions?.find((option) =>
-    option.route.join(' -> ') === 'Porto -> Madrid -> Dubai' &&
-    option.departureDate === '2026-05-21'
-  );
-  if (skippedMadrid?.reason !== 'stay-time') {
-    throw new Error('Expected Madrid on 2026-05-21 to be skipped for stay-time.');
+  const skippedWindow = quote.optimizedRouteSkippedOptions?.find((option) => option.reason === 'stay-time-window');
+  if (!skippedWindow?.details?.skippedDates?.includes('2026-05-21')) {
+    throw new Error('Expected later dates to be pruned for stay-time.');
   }
 }
 

@@ -447,16 +447,12 @@ describe('flight price providers', () => {
       ['Porto', 'Athens', 'Dubai'],
       ['Porto', 'Barcelona', 'Dubai']
     ]);
-    assert.equal(quote.optimizedRouteOptions.some((option) => option.route.join('-') === 'Porto-Madrid-Dubai'), false);
-    const skippedMadrid = quote.optimizedRouteSkippedOptions.find((option) =>
-      option.route.join('-') === 'Porto-Madrid-Dubai' &&
-      option.departureDate === '2026-05-21'
-    );
-    assert.equal(skippedMadrid.reason, 'stay-time');
-    assert.equal(skippedMadrid.departureDate, '2026-05-21');
-    assert.equal(skippedMadrid.details.requiredDepartureDate, '2026-05-24');
-    assert.equal(skippedMadrid.details.nextDepartureDate, '2026-05-23');
-    assert.ok(events.some((event) => event.step === 'candidate-skip' && event.details?.reason === 'stay-time'));
+    assert.equal(quote.optimizedRouteOptions.some((option) => option.departureDate === '2026-05-21'), false);
+    const skippedDateWindow = quote.optimizedRouteSkippedOptions.find((option) => option.reason === 'stay-time-window');
+    assert.deepEqual(skippedDateWindow.details.skippedDates, ['2026-05-21', '2026-05-22', '2026-05-23']);
+    assert.equal(skippedDateWindow.details.latestArrivalDate, '2026-05-20');
+    assert.equal(skippedDateWindow.details.nextDepartureDate, '2026-05-23');
+    assert.ok(events.some((event) => event.step === 'date-window-pruned' && event.details?.reason === 'stay-time-window'));
   });
 
   it('replaces a missing Europe to Porto return price with a priced fallback hub route', async () => {

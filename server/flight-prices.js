@@ -147,7 +147,27 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   const comparableCandidates = [];
   const skippedCandidates = [];
   const routes = popularTransferRoutes(direction);
-  const dates = dateWindow(currentSuffix[0].departOn, POPULAR_ROUTE_SEARCH_DAYS);
+  const allDates = dateWindow(currentSuffix[0].departOn, POPULAR_ROUTE_SEARCH_DAYS);
+  const datePruning = pruneDatesForTailStay(allDates, currentSuffix, originalLegs.slice(endIndex));
+  const dates = datePruning.validDates;
+  if (datePruning.skippedDates.length > 0) {
+    const groupedSkip = buildSkippedRouteOption({
+      route: [direction.from, direction.to],
+      departureDate: datePruning.skippedDates.join(', '),
+      reason: 'stay-time-window',
+      message: datePruning.message,
+      details: datePruning.details
+    });
+    skippedCandidates.push(groupedSkip);
+    emitProgress(onProgress, 'date-window-pruned', datePruning.message, {
+      from: direction.from,
+      to: direction.to,
+      skippedDates: datePruning.skippedDates,
+      validDates: dates,
+      reason: 'stay-time-window',
+      ...datePruning.details
+    });
+  }
 
   emitProgress(onProgress, 'compare-start', `Comparing ${routes.length} ${direction.from} to ${direction.to} route options across ${dates.length} dates.`, {
     from: direction.from,
@@ -165,23 +185,6 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
         date: departureDate
       });
       const candidateDisplayLegs = buildLegsForRoute(route, departureDate);
-      const stayConflict = candidateTailStayConflict(candidateDisplayLegs, currentSuffix, originalLegs.slice(endIndex));
-      if (stayConflict) {
-        skippedCandidates.push(buildSkippedRouteOption({
-          route,
-          departureDate,
-          reason: 'stay-time',
-          message: stayConflict.message,
-          details: stayConflict
-        }));
-        emitProgress(onProgress, 'candidate-skip', `${candidateLabel} on ${departureDate}: does not leave enough stay time before the next leg.`, {
-          route,
-          date: departureDate,
-          reason: 'stay-time',
-          ...stayConflict
-        });
-        continue;
-      }
       const candidateNormalizedLegs = normalizeLegs(candidateDisplayLegs);
       const candidateQuoted = await quoteNormalizedLegs(candidateNormalizedLegs, {
         onProgress,
@@ -329,24 +332,39 @@ function buildOptimizedRouteOption({
   };
 }
 
-function candidateTailStayConflict(candidateLegs, replacedLegs, tailLegs) {
+function pruneDatesForTailStay(dates, replacedLegs, tailLegs) {
   const staySource = replacedLegs.at(-1);
   const stayHours = Number(staySource?.stayHoursAfter) || 0;
   const firstTailLeg = tailLegs[0];
-  if (!stayHours || !firstTailLeg) return null;
+  if (!stayHours || !firstTailLeg) return { validDates: dates, skippedDates: [] };
 
-  const arrival = new Date(`${candidateLegs.at(-1)?.arriveBy}T00:00:00.000Z`);
   const nextDeparture = new Date(`${firstTailLeg.departOn || firstTailLeg.departureDate}T00:00:00.000Z`);
-  if (Number.isNaN(arrival.getTime()) || Number.isNaN(nextDeparture.getTime())) return null;
-  const requiredDeparture = addHoursToDate(arrival, stayHours);
-  if (requiredDeparture <= nextDeparture) return null;
+  if (Number.isNaN(nextDeparture.getTime())) return { validDates: dates, skippedDates: [] };
+  const latestArrival = addHoursToDate(nextDeparture, -stayHours);
+  const validDates = [];
+  const skippedDates = [];
+  for (const date of dates) {
+    const candidateDate = new Date(`${date}T00:00:00.000Z`);
+    if (Number.isNaN(candidateDate.getTime()) || candidateDate <= latestArrival) {
+      validDates.push(date);
+    } else {
+      skippedDates.push(date);
+    }
+  }
+
+  if (skippedDates.length === 0) return { validDates, skippedDates };
   const stayDays = Number(staySource?.stayDaysAfter) || stayHours / 24;
-  return {
-    message: `Needs ${formatStayDays(stayDays)} in ${staySource.to}, but the next leg leaves on ${formatDateOnly(nextDeparture)}.`,
-    arrivalDate: formatDateOnly(arrival),
-    requiredDepartureDate: formatDateOnly(requiredDeparture),
+  const details = {
+    skippedDates,
+    latestArrivalDate: formatDateOnly(latestArrival),
     nextDepartureDate: formatDateOnly(nextDeparture),
     stayDays
+  };
+  return {
+    validDates,
+    skippedDates,
+    message: `${skippedDates.length} later date${skippedDates.length === 1 ? '' : 's'} skipped because ${staySource.to} needs ${formatStayDays(stayDays)} before the next leg leaves on ${formatDateOnly(nextDeparture)}.`,
+    details
   };
 }
 

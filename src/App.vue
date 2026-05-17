@@ -470,6 +470,7 @@ function transferOptionAmount(option) {
 function transferSkipReason(option) {
   if (option.message) return option.message;
   if (option.reason === 'stay-time') return 'Does not preserve required stay time.';
+  if (option.reason === 'stay-time-window') return 'Later dates cannot preserve required stay time.';
   if (option.reason === 'missing-price') return 'Not enough priced legs to compare.';
   return 'Skipped during pricing.';
 }
