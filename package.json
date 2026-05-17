@@ -10,7 +10,8 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "start": "NODE_ENV=production node server/index.js",
-    "test": "node --test server/*.test.js"
+    "test": "node --test server/*.test.js",
+    "test:route:porto": "node scripts/test-porto-route.js"
   },
   "dependencies": {
     "@vitejs/plugin-vue": "^5.2.1",

@@ -47,3 +47,11 @@ Priced flight legs include prefilled Aviasales search links. When `TRAVELPAYOUTS
 npm test
 npm run build
 ```
+
+Run the Porto -> Dubai -> Moscow -> Kaliningrad pricing scenario used for regression checks:
+
+```bash
+npm run test:route:porto
+```
+
+By default this uses mocked provider responses so it does not spend API quota. Add `-- --live` to use configured live providers, or `-- --json` to print the full plan, quote, and progress events.
