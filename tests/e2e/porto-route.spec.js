@@ -44,6 +44,9 @@ test('prices the Porto route with date-flex transfer options', async ({ page }) 
   await expect(selectedTransfer).toContainText('$277');
   await expect(selectedTransfer).toContainText('2026-05-21 (+1d date)');
   await expect(page.getByRole('button', { name: /Porto -> Madrid -> Dubai.*\+1d stay/i })).toBeVisible();
+  const dubaiStayOptions = page.getByLabel('Dubai stay options');
+  await expect(dubaiStayOptions.getByRole('button', { name: /3 days in Dubai/i })).toBeVisible();
+  await expect(dubaiStayOptions.getByRole('button', { name: /\+1d: 4 days in Dubai/i })).toBeVisible();
 });
 
 test('keeps skipped transfer diagnostics compact and copyable', async ({ page }) => {

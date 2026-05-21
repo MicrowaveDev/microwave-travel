@@ -184,6 +184,52 @@ The test proves a `+1d stay` option can beat the same transfer with the original
 
 When a pricing optimization changes an upstream arrival date, evaluate whether the next outbound leg should have explicit stay-flex variants. Do not silently mutate stay duration; show the extra stay in options and logs.
 
+## 2026-05-21: Extra-Stay Variants Were Hidden In The Itinerary
+
+### Scenario
+
+Route input included:
+
+- Origin/return: Porto.
+- Stops: Dubai 1 day, Moscow 3 days, Saint Petersburg 7 days, Kaliningrad 7 days.
+- Dubai visit-before date: 2026-05-29.
+- Trip start: 2026-05-20.
+- Locked stop order.
+
+### Symptom
+
+The copied log contained a `+1d in Dubai` candidate for the selected `Porto -> Vienna -> Dubai` transfer, but the itinerary only displayed `Stay 1 day in Dubai`. The user could not tell whether the +1 day option had been checked or whether it was equal in price.
+
+### Triggering Change
+
+Stay-flex candidates were added to pricing and transfer route options, but the itinerary stay separator remained static text.
+
+### Root Cause
+
+Two UI issues combined:
+
+- Transfer option keys used only route and departure date, so same-route same-date variants with different `stayFlexDays` could collide in Vue rendering.
+- The stay separator did not render the stay-flex variants tied to the active transfer option.
+
+### User-Visible Impact
+
+- A checked but incomplete or more expensive +1 day option looked like it was missing.
+- The user had to inspect copied logs to confirm whether the optimizer considered nearby stay durations.
+
+### Fix
+
+- Include `dateShiftDays`, `stayFlexDays`, transfer price, and trip price in transfer option keys.
+- Render stay-option buttons beside the affected stay separator for the active transfer route.
+- Show full-trip price when available, otherwise mark the option as a partial trip and show the transfer price.
+
+### Regression Coverage
+
+Updated `tests/e2e/porto-route.spec.js` to require visible Dubai stay-option buttons, including the `+1d` variant.
+
+### Future Guardrail
+
+Whenever candidate options differ by a dimension that is not visible in the main route label, include that dimension in both the DOM key and the user-facing option text.
+
 ## 2026-05-21: Visit-Before Slack Was Not Used For Leading Transfer Price Search
 
 ### Scenario

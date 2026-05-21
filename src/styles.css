@@ -648,6 +648,39 @@ h2 {
   font-weight: 800;
 }
 
+.stay-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.stay-options button {
+  border: 1px solid #c9dedd;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #334b51;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stay-options button.active {
+  border-color: #0f766e;
+  color: #0f5d57;
+  background: #e4f4f1;
+}
+
+.stay-options strong {
+  display: block;
+  margin-top: 2px;
+  color: #5d7075;
+  font-size: 0.72rem;
+}
+
 .legs small {
   display: block;
   margin-top: 4px;

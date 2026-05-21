@@ -511,6 +511,18 @@ function applyRouteLegs(legs, basePlan = plan.value) {
   };
 }
 
+function transferOptionKey(option) {
+  if (!option) return 'no-option';
+  return [
+    option.route?.join('-') || 'route',
+    option.departureDate || 'date',
+    option.dateShiftDays || 0,
+    option.stayFlexDays || 0,
+    option.amount ?? 'partial',
+    option.totalAmount ?? 'partial-trip'
+  ].join('|');
+}
+
 function transferOptionLabel(option) {
   return option.route.join(' -> ');
 }
@@ -535,6 +547,44 @@ function transferSkipReason(option) {
   if (option.reason === 'stay-time-window') return 'Later dates cannot preserve required stay time.';
   if (option.reason === 'missing-price') return 'Not enough priced legs to compare.';
   return 'Skipped during pricing.';
+}
+
+function sameTransferWithoutStayFlex(left, right) {
+  return Boolean(left && right) &&
+    left.route?.join(' -> ') === right.route?.join(' -> ') &&
+    left.departureDate === right.departureDate &&
+    (Number(left.dateShiftDays) || 0) === (Number(right.dateShiftDays) || 0) &&
+    left.amount === right.amount;
+}
+
+function stayFlexOptionsForLeg(leg) {
+  const active = activeTransferOption.value;
+  if (!active?.route?.length || active.route.at(-1) !== leg.to) return [];
+  const options = transferRouteOptions.value
+    .filter((option) => sameTransferWithoutStayFlex(option, active))
+    .sort((left, right) => (Number(left.stayFlexDays) || 0) - (Number(right.stayFlexDays) || 0));
+  return options.length > 1 ? options : [];
+}
+
+function stayFlexOptionLabel(option, leg) {
+  const activeStayFlex = Number(activeTransferOption.value?.stayFlexDays) || 0;
+  const optionStayFlex = Number(option.stayFlexDays) || 0;
+  const baseDays = (Number(leg.stayDaysAfter) || 0) - activeStayFlex;
+  const optionDays = Math.round((baseDays + optionStayFlex) * 10) / 10;
+  const dayText = `${optionDays} day${optionDays === 1 ? '' : 's'}`;
+  if (optionStayFlex === 0) return `${dayText} in ${leg.to}`;
+  return `+${optionStayFlex}d: ${dayText} in ${leg.to}`;
+}
+
+function stayFlexOptionAmount(option) {
+  if (Number.isFinite(option.totalAmount)) return `$${option.totalAmount.toLocaleString()} trip`;
+  if (Number.isFinite(option.amount)) return `Partial trip · $${option.amount.toLocaleString()} transfer`;
+  return 'Partial trip';
+}
+
+function selectStayFlexOption(option) {
+  const index = transferRouteOptions.value.findIndex((candidate) => transferOptionKey(candidate) === transferOptionKey(option));
+  if (index >= 0) selectTransferOption(index);
 }
 
 async function copyPricingLog() {
@@ -867,7 +917,7 @@ optimize();
       <div v-if="transferRouteOptions.length" class="transfer-options" aria-label="Transfer route options">
         <button
           v-for="(option, index) in transferRouteOptions"
-          :key="`${option.route.join('-')}-${option.departureDate}`"
+          :key="transferOptionKey(option)"
           type="button"
           :class="{ active: selectedTransferOptionIndex === index }"
           @click="selectTransferOption(index)"
@@ -932,7 +982,19 @@ optimize();
             </div>
           </article>
           <div v-if="leg.stayHoursAfter" class="stay-separator">
-            Stay {{ leg.stayDaysAfter }} day{{ leg.stayDaysAfter === 1 ? '' : 's' }} in {{ leg.to }}
+            <span>Stay {{ leg.stayDaysAfter }} day{{ leg.stayDaysAfter === 1 ? '' : 's' }} in {{ leg.to }}</span>
+            <div v-if="stayFlexOptionsForLeg(leg).length" class="stay-options" :aria-label="`${leg.to} stay options`">
+              <button
+                v-for="option in stayFlexOptionsForLeg(leg)"
+                :key="`stay-${transferOptionKey(option)}`"
+                type="button"
+                :class="{ active: transferOptionKey(option) === transferOptionKey(activeTransferOption) }"
+                @click="selectStayFlexOption(option)"
+              >
+                <span>{{ stayFlexOptionLabel(option, leg) }}</span>
+                <strong>{{ stayFlexOptionAmount(option) }}</strong>
+              </button>
+            </div>
           </div>
         </template>
       </div>
