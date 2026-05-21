@@ -34,11 +34,17 @@ const CITY_IATA_CODES = new Map([
   ['amsterdam', 'AMS'],
   ['kaliningrad', 'KGD'],
   ['moscow', 'MOW'],
-  ['moskow', 'MOW']
+  ['moskow', 'MOW'],
+  ['saint petersburg', 'LED'],
+  ['st petersburg', 'LED'],
+  ['st. petersburg', 'LED'],
+  ['sankt petersburg', 'LED'],
+  ['spb', 'LED'],
+  ['led', 'LED']
 ]);
 
-const RUSSIAN_CITY_NAMES = new Set(['Kaliningrad', 'Moscow']);
-const RUSSIAN_IATA_CODES = new Set(['KGD', 'MOW', 'SVO', 'DME', 'VKO']);
+const RUSSIAN_CITY_NAMES = new Set(['Kaliningrad', 'Moscow', 'Saint Petersburg']);
+const RUSSIAN_IATA_CODES = new Set(['KGD', 'MOW', 'SVO', 'DME', 'VKO', 'LED']);
 const PORTO_DUBAI_TRANSFER_HUBS = [
   'Doha',
   'Istanbul',

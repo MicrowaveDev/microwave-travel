@@ -12,6 +12,14 @@ describe('travel optimizer', () => {
     ]);
   });
 
+  it('normalizes Saint Petersburg aliases', () => {
+    assert.deepEqual(parseStops('spb, st petersburg, led'), [
+      'Saint Petersburg',
+      'Saint Petersburg',
+      'Saint Petersburg'
+    ]);
+  });
+
   it('keeps Dubai before the provided deadline when possible', () => {
     const plan = optimizeTrip({
       origin: 'porto',

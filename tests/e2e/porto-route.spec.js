@@ -53,3 +53,8 @@ test('shows validation feedback from the optimize endpoint', async ({ page }) =>
   await page.getByRole('button', { name: 'Optimize route' }).click();
   await expect(page.getByText('Choose a starting city.')).toBeVisible();
 });
+
+test('includes Saint Petersburg in city suggestions', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#city-options option[value="Saint Petersburg"]')).toHaveCount(1);
+});

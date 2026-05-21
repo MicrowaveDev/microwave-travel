@@ -7,6 +7,7 @@ const cityOptions = [
   'Dubai',
   'Kaliningrad',
   'Moscow',
+  'Saint Petersburg',
   'Lisbon',
   'Istanbul',
   'Madrid',
@@ -168,6 +169,10 @@ function saveTripState() {
 
 function addStop() {
   stops.value.push(createStop());
+}
+
+function showCityOptions(event) {
+  event.currentTarget?.showPicker?.();
 }
 
 function removeStop(id) {
@@ -633,7 +638,7 @@ optimize();
 
       <label>
         Start and return city
-        <input v-model="origin" list="city-options" type="search" autocomplete="off" />
+        <input v-model="origin" list="city-options" type="search" autocomplete="off" @click="showCityOptions" @focus="showCityOptions" />
       </label>
 
       <div class="route-editor">
@@ -654,7 +659,7 @@ optimize();
               ↓
             </button>
           </div>
-          <input v-model="stop.city" :aria-label="`Stop ${index + 1} city`" list="city-options" type="search" autocomplete="off" />
+          <input v-model="stop.city" :aria-label="`Stop ${index + 1} city`" list="city-options" type="search" autocomplete="off" @click="showCityOptions" @focus="showCityOptions" />
 
           <input v-model="stop.visitBefore" :aria-label="`Stop ${index + 1} visit before date`" type="date" />
           <input v-model.number="stop.stayDays" :aria-label="`Stop ${index + 1} days to spend`" min="0" step="0.5" type="number" />

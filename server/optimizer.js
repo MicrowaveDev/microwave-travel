@@ -41,7 +41,13 @@ const CITY_ALIASES = new Map([
   ['moscow', 'Moscow'],
   ['moskow', 'Moscow'],
   ['moskva', 'Moscow'],
-  ['mow', 'Moscow']
+  ['mow', 'Moscow'],
+  ['saint petersburg', 'Saint Petersburg'],
+  ['st petersburg', 'Saint Petersburg'],
+  ['st. petersburg', 'Saint Petersburg'],
+  ['sankt petersburg', 'Saint Petersburg'],
+  ['spb', 'Saint Petersburg'],
+  ['led', 'Saint Petersburg']
 ]);
 
 const CITY_COORDS = {
@@ -64,7 +70,8 @@ const CITY_COORDS = {
   Zurich: [47.458, 8.555],
   Amsterdam: [52.31, 4.768],
   Kaliningrad: [54.89, 20.592],
-  Moscow: [55.756, 37.617]
+  Moscow: [55.756, 37.617],
+  'Saint Petersburg': [59.934, 30.306]
 };
 
 const DIRECT_ROUTE_HINTS = new Map([
@@ -77,6 +84,10 @@ const DIRECT_ROUTE_HINTS = new Map([
   ['Kaliningrad|Gdansk', { hours: 4.5, reliability: 0.58, mode: 'bus', note: 'Bus/ground transfer from Kaliningrad to Gdansk; verify border rules before booking.' }],
   ['Gdansk|Moscow', { hours: 6.8, reliability: 0.5, note: 'Flight from Gdansk after Kaliningrad ground transfer.' }],
   ['Kaliningrad|Moscow', { hours: 2.0, reliability: 0.68, note: 'Check current border and airspace constraints.' }],
+  ['Moscow|Saint Petersburg', { hours: 1.5, reliability: 0.74, note: 'Domestic Russian corridor; check current constraints.' }],
+  ['Saint Petersburg|Moscow', { hours: 1.5, reliability: 0.74, note: 'Domestic Russian corridor; check current constraints.' }],
+  ['Saint Petersburg|Kaliningrad', { hours: 2.0, reliability: 0.64, note: 'Domestic Russian route; check current constraints.' }],
+  ['Kaliningrad|Saint Petersburg', { hours: 2.0, reliability: 0.64, note: 'Domestic Russian route; check current constraints.' }],
   ['Moscow|Dubai', { hours: 5.6, reliability: 0.72, note: 'Common long-haul leg.' }],
   ['Dubai|Lisbon', { hours: 8.2, reliability: 0.78, note: 'Common Europe return hub toward Porto.' }],
   ['Lisbon|Porto', { hours: 1.0, reliability: 0.9, note: 'Short domestic hop; train may also be cheaper.' }],
