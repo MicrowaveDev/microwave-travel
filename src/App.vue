@@ -619,14 +619,17 @@ function copyLogWithFallback(text) {
 }
 
 function legPrice(index) {
-  const leg = plan.value?.legs?.[index];
-  const price = activePriceLegs.value.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.amount;
+  const price = activePriceLeg(index)?.amount;
   return typeof price === 'number' ? `$${price.toLocaleString()}` : null;
 }
 
 function legProvider(index) {
-  const leg = plan.value?.legs?.[index];
-  return activePriceLegs.value.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.provider || null;
+  return activePriceLeg(index)?.provider || null;
+}
+
+function legBaggage(index) {
+  const baggage = activePriceLeg(index)?.baggageAllowance;
+  return baggage?.summary || null;
 }
 
 function legBooking(index) {
@@ -656,7 +659,20 @@ function legBooking(index) {
 function legPriceError(index) {
   const leg = plan.value?.legs?.[index];
   if (leg?.mode === 'bus') return 'Ground transfer: check bus ticket and border requirements separately.';
-  return activePriceLegs.value.find((pricedLeg) => pricedLeg.from === leg?.from && pricedLeg.to === leg?.to)?.error || null;
+  return activePriceLeg(index)?.error || null;
+}
+
+function activePriceLeg(index) {
+  const leg = plan.value?.legs?.[index];
+  if (!leg) return null;
+  return activePriceLegs.value.find((pricedLeg) =>
+    pricedLeg.from === leg.from &&
+    pricedLeg.to === leg.to &&
+    pricedLeg.departureDate === leg.departOn
+  ) || activePriceLegs.value.find((pricedLeg) =>
+    pricedLeg.from === leg.from &&
+    pricedLeg.to === leg.to
+  ) || null;
 }
 
 watch(
@@ -848,6 +864,7 @@ optimize();
                 {{ legPrice(index) }} USD<span v-if="legProvider(index)"> via {{ legProvider(index) }}</span>
               </p>
               <p v-else-if="legPriceError(index)" class="leg-price-missing">{{ legPriceError(index) }}</p>
+              <p v-if="legBaggage(index)" class="leg-baggage">Bags: {{ legBaggage(index) }}</p>
               <a
                 v-if="legBooking(index)"
                 class="booking-link"

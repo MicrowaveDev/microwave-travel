@@ -106,6 +106,67 @@ describe('flight price providers', () => {
     assert.ok(events.some((event) => event.message.includes('Porto -> Doha')));
   });
 
+  it('normalizes baggage allowance returned by SerpApi', async () => {
+    clearFlightPriceCache();
+    const originalSerpApiKey = process.env.SERPAPI_KEY;
+    const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
+    const originalYandexKey = process.env.YANDEX_RASP_API_KEY;
+    const originalFetch = globalThis.fetch;
+    process.env.SERPAPI_KEY = 'test-serpapi-key';
+    delete process.env.TRAVELPAYOUTS_TOKEN;
+    delete process.env.YANDEX_RASP_API_KEY;
+    globalThis.fetch = async () => Response.json({
+      best_flights: [{
+        price: 321,
+        extensions: ['Carry-on bag included', 'Checked bag costs extra'],
+        flights: [{ airline: 'Test Air' }]
+      }],
+      search_metadata: { id: 'baggage-search' }
+    });
+
+    const quote = await quoteFlightPrices({
+      legs: [{ from: 'Porto', to: 'Doha', departOn: '2026-05-20', mode: 'flight' }]
+    });
+
+    globalThis.fetch = originalFetch;
+    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
+    restoreEnv('TRAVELPAYOUTS_TOKEN', originalTravelpayoutsToken);
+    restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
+    clearFlightPriceCache();
+
+    assert.equal(quote.legs[0].baggageAllowance.source, 'serpapi');
+    assert.match(quote.legs[0].baggageAllowance.summary, /Carry-on bag included/);
+    assert.match(quote.legs[0].baggageAllowance.summary, /Checked bag costs extra/);
+  });
+
+  it('marks baggage allowance as unknown when Aviasales does not return it', async () => {
+    clearFlightPriceCache();
+    const originalSerpApiKey = process.env.SERPAPI_KEY;
+    const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
+    const originalYandexKey = process.env.YANDEX_RASP_API_KEY;
+    const originalFetch = globalThis.fetch;
+    delete process.env.SERPAPI_KEY;
+    process.env.TRAVELPAYOUTS_TOKEN = 'test-aviasales-token';
+    delete process.env.YANDEX_RASP_API_KEY;
+    globalThis.fetch = async () => Response.json({
+      success: true,
+      data: [{ price: 88, currency: 'usd', airline: 'TP', search_id: 'aviasales-bags' }]
+    });
+
+    const quote = await quoteFlightPrices({
+      legs: [{ from: 'Porto', to: 'Lisbon', departOn: '2026-05-20', mode: 'flight' }]
+    });
+
+    globalThis.fetch = originalFetch;
+    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
+    restoreEnv('TRAVELPAYOUTS_TOKEN', originalTravelpayoutsToken);
+    restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
+    clearFlightPriceCache();
+
+    assert.equal(quote.legs[0].baggageAllowance.source, 'aviasales');
+    assert.match(quote.legs[0].baggageAllowance.summary, /did not return baggage allowance/);
+  });
+
   it('emits route comparison progress for popular transfer checks', async () => {
     clearFlightPriceCache();
     const originalSerpApiKey = process.env.SERPAPI_KEY;

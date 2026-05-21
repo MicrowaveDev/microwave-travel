@@ -41,7 +41,11 @@ function serpApiResponse(url, fixture) {
   const offer = fixture.serpapi?.prices?.[route];
   return Response.json({
     best_flights: Number.isFinite(offer?.price)
-      ? [{ price: offer.price, flights: [{ airline: offer.carrier || 'Fixture Air' }] }]
+      ? [{
+          price: offer.price,
+          extensions: offer.baggage ? [offer.baggage] : [],
+          flights: [{ airline: offer.carrier || 'Fixture Air' }]
+        }]
       : [],
     search_metadata: { id: `fixture-serpapi-${route}` }
   });
@@ -61,6 +65,7 @@ function aviasalesResponse(url, fixture) {
           price: offer.price,
           currency: 'usd',
           airline: offer.carrier || 'Fixture Air',
+          baggage: offer.baggage || undefined,
           search_id: `fixture-aviasales-${route}`
         }]
       : []

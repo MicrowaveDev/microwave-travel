@@ -603,6 +603,12 @@ h2 {
   font-weight: 800;
 }
 
+.leg-baggage {
+  margin-top: 4px;
+  color: #40545c;
+  font-weight: 700;
+}
+
 .booking-link {
   display: inline-flex;
   width: fit-content;

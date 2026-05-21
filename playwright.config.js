@@ -21,7 +21,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `PORT=${apiPort} FLIGHT_PRICE_FIXTURE_FILE=tests/fixtures/porto-route-prices.json FLIGHT_PRICE_CACHE_DB=/tmp/microwave-travel-e2e-cache.sqlite SERPAPI_KEY=fixture-serpapi-key TRAVELPAYOUTS_TOKEN=fixture-aviasales-token npm run start`,
+      command: `rm -f /tmp/microwave-travel-e2e-cache.sqlite && PORT=${apiPort} FLIGHT_PRICE_FIXTURE_FILE=tests/fixtures/porto-route-prices.json FLIGHT_PRICE_CACHE_DB=/tmp/microwave-travel-e2e-cache.sqlite SERPAPI_KEY=fixture-serpapi-key TRAVELPAYOUTS_TOKEN=fixture-aviasales-token npm run start`,
       url: `http://127.0.0.1:${apiPort}/api/health`,
       reuseExistingServer: false,
       timeout: 30_000

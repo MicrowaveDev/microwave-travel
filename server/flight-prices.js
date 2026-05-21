@@ -828,7 +828,8 @@ async function quoteWithAmadeus(legs) {
       amount: offer ? Number(offer.price?.grandTotal || offer.price?.total) : null,
       currency: offer?.price?.currency || 'USD',
       providerOfferId: offer?.id || null,
-      carrier: offer?.validatingAirlineCodes?.[0] || null
+      carrier: offer?.validatingAirlineCodes?.[0] || null,
+      baggageAllowance: baggageAllowanceFromOffer('amadeus', offer)
     });
   }
 
@@ -864,6 +865,7 @@ async function quoteWithSerpApi(legs) {
         currency: 'USD',
         providerOfferId: payload.search_metadata?.id || null,
         carrier: null,
+        baggageAllowance: unknownBaggageAllowance('serpapi'),
         error: payload.error
       });
       continue;
@@ -876,6 +878,7 @@ async function quoteWithSerpApi(legs) {
       currency: 'USD',
       providerOfferId: payload.search_metadata?.id || null,
       carrier: offer?.flights?.[0]?.airline || null,
+      baggageAllowance: baggageAllowanceFromOffer('serpapi', offer),
       error: offer ? null : 'No flights found for this leg.'
     });
   }
@@ -968,7 +971,7 @@ async function tryCachedProvider(provider, leg, fn, options = {}) {
       });
     }
     return {
-      quote: cloneQuote(cachedQuote),
+      quote: withNormalizedBaggage(cloneQuote(cachedQuote)),
       summary: { provider, ok: true, cached: true }
     };
   }
@@ -982,6 +985,7 @@ async function tryCachedProvider(provider, leg, fn, options = {}) {
 
   const result = await tryProvider(provider, fn);
   if (result.quote) {
+    result.quote = withNormalizedBaggage(result.quote);
     setCachedFlightPrice(cacheKey, provider, leg, cloneQuote(result.quote), Date.now() + LEG_QUOTE_CACHE_TTL_MS);
   }
   return result;
@@ -1090,6 +1094,7 @@ async function quoteLegWithSerpApi(leg) {
     provider: 'serpapi',
     providerOfferId: payload.search_metadata?.id || null,
     carrier: offer?.flights?.[0]?.airline || null,
+    baggageAllowance: baggageAllowanceFromOffer('serpapi', offer),
     error: offer ? null : 'No flights found for this leg.'
   };
 }
@@ -1123,6 +1128,7 @@ async function quoteLegWithTravelpayouts(leg) {
     provider: 'aviasales',
     providerOfferId: offer?.search_id || offer?.signature || null,
     carrier: offer?.airline || null,
+    baggageAllowance: baggageAllowanceFromOffer('aviasales', offer),
     error: offer ? null : 'Aviasales did not return cached prices for this leg.'
   };
 }
@@ -1161,6 +1167,7 @@ async function quoteLegWithYandexRasp(leg) {
     provider: 'yandex-rasp',
     providerOfferId: segment.thread?.uid || null,
     carrier: segment.thread?.carrier?.title || null,
+    baggageAllowance: unknownBaggageAllowance('yandex-rasp'),
     schedule: {
       transportType: segment.thread?.transport_type || segment.from?.transport_type || null,
       departure: segment.departure || null,
@@ -1171,6 +1178,95 @@ async function quoteLegWithYandexRasp(leg) {
     error: place?.price?.whole
       ? `Yandex Rasp found a ${place.price.whole} RUB fare; USD conversion is not connected yet.`
       : 'Yandex Rasp found schedule options, but no USD price.'
+  };
+}
+
+function baggageAllowanceFromOffer(provider, offer) {
+  if (!offer) return unknownBaggageAllowance(provider);
+  const parts = uniqueStrings([
+    ...collectBaggageStrings(offer),
+    ...collectBaggageStrings(offer.baggage),
+    ...collectBaggageStrings(offer.baggage_allowance),
+    ...collectBaggageStrings(offer.baggageAllowance),
+    ...collectBaggageStrings(offer.included_baggage),
+    ...collectBaggageStrings(offer.includedBaggage),
+    ...collectBaggageStrings(offer.handbags),
+    ...collectBaggageStrings(offer.hand_baggage),
+    ...collectBaggageStrings(offer.carry_on),
+    ...collectBaggageStrings(offer.carryOn),
+    ...collectBaggageStrings(offer.checked_baggage),
+    ...collectBaggageStrings(offer.checkedBaggage),
+    ...(Array.isArray(offer.flights) ? offer.flights.flatMap((flight) => collectBaggageStrings(flight)) : [])
+  ]);
+  if (parts.length === 0) return unknownBaggageAllowance(provider);
+  return {
+    source: provider,
+    summary: parts.slice(0, 3).join('; '),
+    details: parts
+  };
+}
+
+function collectBaggageStrings(value) {
+  if (!value) return [];
+  if (typeof value === 'string') {
+    return baggageTextLooksRelevant(value) ? [normalizeBaggageText(value)] : [];
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return [];
+  if (Array.isArray(value)) return value.flatMap(collectBaggageStrings);
+  if (typeof value !== 'object') return [];
+  return Object.entries(value).flatMap(([key, nested]) => {
+    if (baggageKeyLooksRelevant(key)) {
+      const direct = formatBaggageField(key, nested);
+      if (direct) return [direct, ...collectBaggageStrings(nested)];
+    }
+    return typeof nested === 'object' ? collectBaggageStrings(nested) : [];
+  });
+}
+
+function baggageKeyLooksRelevant(key) {
+  return /bag|baggage|luggage|carry|handbag|personal_item|personal item|checked/i.test(key);
+}
+
+function baggageTextLooksRelevant(text) {
+  return /bag|baggage|luggage|carry[- ]?on|handbag|personal item|checked/i.test(text);
+}
+
+function formatBaggageField(key, value) {
+  if (typeof value === 'string') return normalizeBaggageText(value);
+  if (typeof value === 'number') return `${humanizeBaggageKey(key)}: ${value}`;
+  if (typeof value === 'boolean') return `${humanizeBaggageKey(key)}: ${value ? 'included' : 'not included'}`;
+  return null;
+}
+
+function normalizeBaggageText(text) {
+  return String(text).replace(/\s+/g, ' ').trim();
+}
+
+function humanizeBaggageKey(key) {
+  return String(key)
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+function uniqueStrings(values) {
+  const seen = new Set();
+  return values.filter((value) => {
+    const normalized = normalizeBaggageText(value);
+    if (!normalized || seen.has(normalized.toLowerCase())) return false;
+    seen.add(normalized.toLowerCase());
+    return true;
+  });
+}
+
+function unknownBaggageAllowance(provider) {
+  return {
+    source: provider,
+    summary: `${providerLabel(provider)} did not return baggage allowance; check fare rules before booking.`,
+    details: [],
+    included: null
   };
 }
 
@@ -1202,9 +1298,10 @@ async function getAmadeusToken() {
 }
 
 function normalizeQuote(provider, legs, attempts = []) {
-  const priced = legs.filter((leg) => Number.isFinite(leg.amount));
-  const activeProviders = [...new Set(legs.map((leg) => leg.provider).filter(Boolean))];
-  const normalizedLegs = addBookingLinks(legs.map((leg) => ({
+  const normalizedInputLegs = legs.map(withNormalizedBaggage);
+  const priced = normalizedInputLegs.filter((leg) => Number.isFinite(leg.amount));
+  const activeProviders = [...new Set(normalizedInputLegs.map((leg) => leg.provider).filter(Boolean))];
+  const normalizedLegs = addBookingLinks(normalizedInputLegs.map((leg) => ({
     ...leg,
     amount: Number.isFinite(leg.amount) ? roundMoney(leg.amount) : null
   })));
@@ -1224,6 +1321,14 @@ function normalizeQuote(provider, legs, attempts = []) {
           : configuredProviders().length
             ? 'Configured providers did not return USD prices for this route.'
             : 'No flight price provider is configured. Add provider keys to the server environment.'
+  };
+}
+
+function withNormalizedBaggage(leg) {
+  if (!leg || leg.mode === 'bus' || leg.baggageAllowance || !leg.provider) return leg;
+  return {
+    ...leg,
+    baggageAllowance: unknownBaggageAllowance(leg.provider)
   };
 }
 
