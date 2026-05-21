@@ -121,6 +121,7 @@ const DIRECT_ROUTE_HINTS = new Map([
 ]);
 
 const RETURN_HUBS = ['Lisbon', 'Istanbul', 'Warsaw', 'Belgrade'];
+const RUSSIAN_MAINLAND_CITIES = new Set(['Moscow', 'Saint Petersburg']);
 
 export function normalizeCity(value) {
   const key = String(value || '').trim().toLowerCase();
@@ -367,7 +368,7 @@ function expandRouteForTransfers(route) {
 }
 
 function isRussianMainland(city) {
-  return city === 'Moscow';
+  return RUSSIAN_MAINLAND_CITIES.has(city);
 }
 
 function routeEstimate(from, to) {

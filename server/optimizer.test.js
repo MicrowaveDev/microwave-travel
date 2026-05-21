@@ -123,6 +123,20 @@ describe('travel optimizer', () => {
     );
   });
 
+  it('does not route Saint Petersburg to Kaliningrad through Gdansk', () => {
+    const plan = optimizeTrip({
+      origin: 'saint petersburg',
+      stops: ['kaliningrad'],
+      startDate: '2026-05-20',
+      lockOrder: true
+    });
+
+    assert.deepEqual(
+      plan.legs.map((leg) => `${leg.from}->${leg.to}:${leg.mode}`),
+      ['Saint Petersburg->Kaliningrad:flight', 'Kaliningrad->Saint Petersburg:flight']
+    );
+  });
+
   it('removes duplicate consecutive city legs', () => {
     const plan = optimizeTrip({
       origin: 'porto',
