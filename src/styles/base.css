@@ -1,0 +1,158 @@
+:root {
+  color: #1f2933;
+  background: #f5f7f7;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(440px, 500px) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+h1 {
+  margin: 0;
+  color: #172026;
+  font-size: 2rem;
+  line-height: 1.05;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: #4b5b63;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+input,
+select {
+  width: 100%;
+  border: 1px solid #bfccca;
+  border-radius: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+  color: #162026;
+  background: #fbfdfc;
+  outline: none;
+}
+
+input:focus,
+select:focus {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
+}
+
+select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #4b5b63 50%),
+    linear-gradient(135deg, #4b5b63 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 50%,
+    calc(100% - 13px) 50%;
+  background-repeat: no-repeat;
+  background-size:
+    5px 5px,
+    5px 5px;
+}
+
+input:disabled {
+  color: #8a999e;
+  background: #edf2f1;
+}
+
+button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #0f766e;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
+
+.secondary-button {
+  color: #0f5d57;
+  background: #dcefed;
+}
+
+.icon-button {
+  display: grid;
+  width: 30px;
+  min-height: 30px;
+  place-items: center;
+  padding: 0;
+  background: #607178;
+  font-size: 0.86rem;
+  line-height: 1;
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+}
+
+.error,
+.warning-list p {
+  margin: 0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff4d8;
+  color: #7a4a00;
+  font-weight: 700;
+}
+
+@media (max-width: 860px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .planner-panel {
+    border-right: 0;
+    border-bottom: 1px solid #d8e0df;
+  }
+}
+
+@media (max-width: 560px) {
+  .planner-panel,
+  .results-panel {
+    padding: 20px;
+  }
+
+  .field-row,
+  .route-header,
+  .stop-row,
+  .summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .route-header {
+    display: none;
+  }
+
+  .icon-button {
+    width: 100%;
+  }
+}

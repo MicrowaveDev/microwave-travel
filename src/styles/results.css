@@ -1,0 +1,224 @@
+.results-panel {
+  padding: 20px;
+  overflow: auto;
+}
+
+.summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.summary-strip div {
+  border: 1px solid #d8e0df;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.summary-strip span {
+  display: block;
+  margin-bottom: 4px;
+  color: #6a7a82;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.summary-strip strong {
+  color: #172026;
+  font-size: 1.35rem;
+}
+
+.route-map {
+  margin-bottom: 12px;
+  border: 1px solid #c9d7d5;
+  border-radius: 8px;
+  padding: 12px;
+  background: #e8f3f1;
+}
+
+.route-map p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #173733;
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+.route-segments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: #173733;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.route-city {
+  font-size: 1rem;
+}
+
+.route-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #607178;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.route-time::before,
+.route-time::after {
+  display: block;
+  width: 16px;
+  height: 2px;
+  border-radius: 999px;
+  background: #7e9290;
+  content: "";
+}
+
+.route-time span {
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: #0f5d57;
+  background: #dcefed;
+}
+
+.warning-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.price-panel {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  border: 1px solid #d8e0df;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.price-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.price-panel-header span {
+  display: block;
+  margin-bottom: 2px;
+  color: #6a7a82;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.price-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.price-panel-header strong {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #0f5d57;
+  background: #dcefed;
+  font-size: 0.7rem;
+}
+
+.copy-log-button {
+  min-height: 28px;
+  border: 1px solid #bfd7d4;
+  padding: 4px 10px;
+  color: #0f5d57;
+  background: #f6fbfa;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.copy-log-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.price-panel p,
+.price-progress p {
+  margin: 0;
+  color: #35464d;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.price-progress {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.price-log-details {
+  display: grid;
+  gap: 8px;
+}
+
+.price-progress li {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border-top: 1px solid #edf2f1;
+  padding-top: 6px;
+}
+
+.price-progress span {
+  color: #607178;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.price-progress p {
+  color: #4b5b63;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.provider-attempts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.provider-attempts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #0f5d57;
+  background: #dcefed;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.provider-attempts small {
+  color: inherit;
+  font-size: 0.65rem;
+  opacity: 0.8;
+}
+
+.provider-attempts .failed {
+  color: #7a4a00;
+  background: #fff4d8;
+}

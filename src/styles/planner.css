@@ -1,0 +1,92 @@
+.planner-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  background: #ffffff;
+  border-right: 1px solid #d8e0df;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: #0f766e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(96px, 0.55fr);
+  gap: 10px;
+}
+
+.route-editor {
+  display: grid;
+  gap: 6px;
+}
+
+.route-header {
+  display: grid;
+  grid-template-columns: 42px minmax(96px, 1fr) 136px 72px 30px;
+  gap: 6px;
+  align-items: center;
+  color: #4b5b63;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.stop-row {
+  display: grid;
+  grid-template-columns: 42px minmax(96px, 1fr) 136px 72px 30px;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid #d8e0df;
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.move-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, 18px);
+  gap: 3px;
+}
+
+.move-buttons button {
+  display: grid;
+  width: 18px;
+  min-height: 28px;
+  place-items: center;
+  border: 1px solid #bfd0ce;
+  padding: 0;
+  color: #0f5d57;
+  background: #edf7f5;
+  font-size: 0.78rem;
+  line-height: 1;
+}
+
+.move-buttons button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.stop-row input,
+.stop-row select {
+  min-height: 34px;
+  padding: 7px 8px;
+  font-size: 0.86rem;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.check-row input {
+  width: 18px;
+  height: 18px;
+}

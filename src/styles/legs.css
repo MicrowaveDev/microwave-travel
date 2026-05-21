@@ -1,0 +1,6 @@
+.legs {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
