@@ -1,3 +1,10 @@
+// Static registry of European hubs the optimizer tries as transfer
+// points for Porto↔Dubai search. To add a new hub: append to
+// PORTO_DUBAI_TRANSFER_HUBS and register the IATA code in
+// server/iata-codes.js. PORTO_RETURN_FALLBACK_HUBS is the shorter list
+// used by recoverMissingPortoReturnLeg when the direct return leg has
+// no price.
+
 export const PORTO_DUBAI_TRANSFER_HUBS = [
   'Doha',
   'Istanbul',

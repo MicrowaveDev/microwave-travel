@@ -1,3 +1,9 @@
+// Maps provider keys (serpapi, aviasales, yandex-rasp, amadeus) to
+// human-readable labels for log/progress messages, and reports which
+// providers are configured via env. Broken out separately so that
+// providers.js and baggage-from-offer.js can both use it without
+// creating an import cycle.
+
 export function providerLabel(provider) {
   return provider
     .split(', ')

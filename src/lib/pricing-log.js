@@ -1,3 +1,8 @@
+// Builds the copy-to-clipboard price-search log. Pure formatter: takes
+// trip inputs, change events, plan, quote, and progress events, returns
+// a single string. Also exports copyLogWithFallback (textarea+execCommand
+// fallback for browsers without navigator.clipboard).
+
 export function buildPricingLog(input) {
   const {
     origin,

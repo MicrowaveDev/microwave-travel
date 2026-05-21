@@ -1,3 +1,7 @@
+/* Entry point: this file only imports the topic modules in cascade
+   order (base globals → planner panel → results panel → transfer
+   options → legs container). Leg-card scoped styles live inside
+   LegCard.vue. See AGENTS.md "Module Map". */
 @import './styles/base.css';
 @import './styles/planner.css';
 @import './styles/results.css';

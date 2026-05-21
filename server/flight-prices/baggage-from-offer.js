@@ -1,3 +1,10 @@
+// Extract a baggage allowance from a provider offer's loose JSON.
+// baggageAllowanceFromOffer walks the offer's nested keys looking for
+// bag/luggage/carry-on text. withNormalizedBaggage falls back to the
+// local SQLite baggage rules (server/baggage-allowances.js) when the
+// provider didn't return useful baggage data. See AGENTS.md "Baggage
+// Allowance Curation" for how to add carrier rules to the local DB.
+
 import { baggageAllowanceForCarrier } from '../baggage-allowances.js';
 import { providerLabel } from './provider-labels.js';
 

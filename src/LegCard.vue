@@ -1,4 +1,8 @@
 <script setup>
+// One numbered route-leg card: header (cities + price), IATA strip with
+// duration/mode, airline + baggage chips, and a collapsed baggage-details
+// panel. Receives index/leg/pricedLeg/booking/priceError as props; no
+// global state. See AGENTS.md "Module Map".
 import { computed } from 'vue';
 
 const props = defineProps({

@@ -1,3 +1,8 @@
+// Localstorage round-trip for the trip planner: load/save the user's
+// origin/stops/dates/passengers/lockOrder, plus the stop and passenger
+// normalizers that everything else routes through. Pure module — App.vue
+// passes refs in via plain snapshots.
+
 export const TRIP_STATE_STORAGE_KEY = 'microwave-travel:trip-state:v1';
 
 export function createStop(city = 'Doha', visitBefore = '', stayDays = 0) {

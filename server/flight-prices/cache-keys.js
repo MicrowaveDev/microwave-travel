@@ -1,3 +1,8 @@
+// Stable cache-key + quote-clone helpers shared by the SQLite price
+// cache. stableCacheKey hashes a sorted-JSON representation so key
+// equality is deterministic across runs; cacheableLeg picks just the
+// fields that should participate in cache equality.
+
 import { createHash } from 'node:crypto';
 
 export function stableCacheKey(prefix, value) {

@@ -1,3 +1,9 @@
+// Per-search bookkeeping for provider availability: which providers are
+// disabled (rate-limited / out of quota), which "skipped" messages have
+// already been emitted (so we don't spam the log). Disable reasons are
+// seeded from the SQLite cache (getDisabledProviderReasons) and pushed
+// back to SQLite when leg-quoter.js trips a new disable.
+
 import { getDisabledProviderReasons } from '../flight-price-cache.js';
 
 export function createProviderState() {

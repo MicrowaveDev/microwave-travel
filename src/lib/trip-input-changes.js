@@ -1,3 +1,8 @@
+// Diff two trip-input snapshots into human-readable change lines for
+// the price-search log. snapshotTripInput captures the planner state
+// at a point in time; describeTripInputChanges produces messages like
+// "Stop 2 city changed from Doha to Dubai".
+
 import { normalizePassengerCountInput } from './trip-state.js';
 
 export function snapshotTripInput(state) {

@@ -1,3 +1,9 @@
+// Attach Aviasales search URLs to priced legs. Contiguous flight legs
+// (same airport handoff, no overnight stay between them) share a
+// multi-segment bookingGroupUrl; standalone legs get a one-way
+// bookingUrl. TRAVELPAYOUTS_MARKER env var, when set, flips the labels
+// to "Affiliate search link".
+
 const AVIASALES_SEARCH_BASE_URL = process.env.AVIASALES_SEARCH_BASE_URL || 'https://search.aviasales.com/flights/';
 
 export function addBookingLinks(legs) {

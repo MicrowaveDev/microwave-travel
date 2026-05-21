@@ -1,3 +1,9 @@
+// City-name → IATA-code lookup table plus geography helpers used by the
+// router and providers. Add new cities here (lowercase key → uppercase
+// code) when extending the planner. isRussianDirection drives provider
+// fallback to Aviasales/Yandex Rasp; sameCityName is the canonical
+// case-insensitive city comparator.
+
 export const CITY_IATA_CODES = new Map([
   ['porto', 'OPO'],
   ['doha', 'DOH'],

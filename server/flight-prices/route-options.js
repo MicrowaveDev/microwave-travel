@@ -1,3 +1,9 @@
+// Output-shaping helpers for the quote payload sent to the UI.
+// compactRouteOptions caps the optimizedRouteOptions list at 40 and
+// dedupes partial-price duplicates; buildSkippedRouteOption shapes
+// entries for optimizedRouteSkippedOptions; the format* helpers are
+// used by progress messages.
+
 export function buildSkippedRouteOption({ route, departureDate, reason, message, details = {} }) {
   return {
     route,

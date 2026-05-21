@@ -1,3 +1,9 @@
+// Progress event emitter for the streaming price search. Callers pass
+// an `onProgress` callback; this module stamps events with a timestamp
+// and step label and shapes provider attempt messages. The
+// PRICE_COMPARE_PROGRESS_DETAIL env var ("verbose" | "compact"|"silent")
+// gates whether per-provider events fire.
+
 import { providerLabel } from './provider-labels.js';
 
 const PRICE_COMPARE_PROGRESS_DETAIL = process.env.PRICE_COMPARE_PROGRESS_DETAIL || 'compact';

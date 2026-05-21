@@ -1,3 +1,9 @@
+// Per-leg HTTP clients for each upstream price provider, plus the
+// shared tryProvider wrapper that captures success/error summaries.
+// Add a new provider here: write quoteLegWith<Name>(leg), then register
+// it in leg-quoter.js's `providers` cascade (Russian vs. non-Russian
+// direction). getAmadeusToken caches the OAuth token across calls.
+
 import {
   baggageAllowanceFromOffer,
   unknownBaggageAllowance

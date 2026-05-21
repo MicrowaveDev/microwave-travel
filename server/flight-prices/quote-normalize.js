@@ -1,3 +1,10 @@
+// Post-quote pipeline: takes raw priced legs from any provider and
+// produces the canonical quote object (totalAmount, pricedLegCount,
+// legs[] with rounded amounts, message). Along the way it fills in
+// airline metadata, local baggage fallback, and Aviasales booking links
+// for every leg. This is the function the optimization brain calls to
+// "score" a candidate trip.
+
 import { airlineInfoForCarrier } from '../airlines.js';
 import { withNormalizedBaggage } from './baggage-from-offer.js';
 import { addBookingLinks } from './booking-links.js';

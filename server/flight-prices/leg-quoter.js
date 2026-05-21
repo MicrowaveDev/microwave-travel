@@ -1,3 +1,10 @@
+// Price a single leg. quoteLeg picks the provider cascade (serpapi →
+// aviasales for non-Russian routes; aviasales → yandex-rasp → serpapi
+// for Russian routes), checks the SQLite cache, calls the upstream,
+// emits progress events, and disables a provider for the rest of the
+// search if it rate-limits. Returns { leg, attempts }. The route-search
+// brain in flight-prices.js drives this for every candidate leg.
+
 import {
   getCachedFlightPrice,
   getCachedFlightPrices,

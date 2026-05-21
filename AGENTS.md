@@ -4,6 +4,56 @@
 
 These instructions apply to the `microwave-travel` app.
 
+## Module Map
+
+Use this to jump straight to the file that owns a concern instead of grepping the whole tree. Every listed file also has a short banner comment at the top describing its responsibility.
+
+### Frontend ([src/](src/))
+
+- [src/App.vue](src/App.vue) — top-level page: planner form, route summary, transfer/stay-flex panels, price-log panel. Holds the reactive refs (`origin`, `stops`, `plan`, `priceQuote`, `priceProgress`, …) and orchestrates `optimize()` / `fetchPrices()` / `selectTransferOption()` / `selectStayFlexOption()`.
+- [src/LegCard.vue](src/LegCard.vue) — one numbered route-leg card (header, IATA strip, airline + baggage chips, baggage details). Pure component; takes `index`, `leg`, `pricedLeg`, `booking`, `priceError` as props.
+- [src/lib/trip-state.js](src/lib/trip-state.js) — `localStorage` round-trip plus `createStop` / `defaultTripState` / `normalizeStayDaysInput` / `normalizePassengerCountInput`.
+- [src/lib/trip-input-changes.js](src/lib/trip-input-changes.js) — `snapshotTripInput` + `describeTripInputChanges` for the input-change log.
+- [src/lib/pricing-log.js](src/lib/pricing-log.js) — `buildPricingLog` text builder + `copyLogWithFallback`.
+- [src/styles.css](src/styles.css) — thin entry that `@import`s the topic files in cascade order.
+- [src/styles/base.css](src/styles/base.css) — root tokens, body, form-control defaults, app-shell grid, responsive breakpoints.
+- [src/styles/planner.css](src/styles/planner.css) — left planner panel (route editor, stop rows, move/icon buttons).
+- [src/styles/results.css](src/styles/results.css) — right results panel (summary strip, route map, price panel, progress log, provider attempts).
+- [src/styles/transfer.css](src/styles/transfer.css) — transfer-option buttons, skipped diagnostics, stay-separator + stay-options.
+- [src/styles/legs.css](src/styles/legs.css) — `.legs` container only; leg-card styles live scoped inside `LegCard.vue`.
+
+### Backend ([server/](server/))
+
+- [server/app.js](server/app.js), [server/index.js](server/index.js) — Express app + entry point.
+- [server/optimizer.js](server/optimizer.js) — route ordering (`buildLegsForRoute`); decides which city order to fly, before pricing.
+- [server/date-utils.js](server/date-utils.js) — date arithmetic for departure/arrival/flex date generation.
+- [server/iata-codes.js](server/iata-codes.js) — city-name → IATA mapping, plus `isRussianDirection` and `sameCityName`. **Add new cities here.**
+- [server/airlines.js](server/airlines.js) — carrier-code → airline info (name + website).
+- [server/baggage-allowances.js](server/baggage-allowances.js), [server/baggage-allowance-db.js](server/baggage-allowance-db.js) — local SQLite baggage rules (see "Baggage Allowance Curation" below).
+- [server/route-intelligence.js](server/route-intelligence.js) — ranks transfer-route candidates so the search tries cheaper hubs first.
+- [server/flight-price-cache.js](server/flight-price-cache.js) — SQLite-backed price/bundle/route-analysis cache + disabled-provider state.
+- [server/flight-prices.js](server/flight-prices.js) — **the route-optimization brain.** Exports `quoteFlightPrices`. Contains `quoteNormalizedLegs`, `optimizePopularTransferRoute`, `recoverMissingPortoReturnLeg`, and their direct helpers (`buildOptimizedRouteOption`, `compareCandidates`, `pruneDatesForTailStay`, `copyStayToReplacement`, `routeAnalysisCacheKey`, `legBundleCacheKey`, `priceCacheConfig`, `normalizeLegs`, `normalizePassengerCount`). **Behavior changes here must update [docs/algorithm-regressions.md](docs/algorithm-regressions.md).**
+- [server/flight-prices/providers.js](server/flight-prices/providers.js) — per-leg upstream HTTP clients: `quoteLegWithSerpApi`, `quoteLegWithTravelpayouts`, `quoteLegWithYandexRasp`, plus `tryProvider`, `getAmadeusToken`. **Add a new price provider here**, then register it in the `providers` cascade in `leg-quoter.js`.
+- [server/flight-prices/leg-quoter.js](server/flight-prices/leg-quoter.js) — `quoteLeg`: provider cascade + SQLite cache + progress events + rate-limit disable.
+- [server/flight-prices/quote-normalize.js](server/flight-prices/quote-normalize.js) — `normalizeQuote`: wires airline metadata, baggage fallback, booking links, and the priced summary onto raw provider legs. This is what the optimization brain calls to "score" a candidate.
+- [server/flight-prices/baggage-from-offer.js](server/flight-prices/baggage-from-offer.js) — extract baggage allowance from a provider offer's loose JSON; falls back to the local SQLite rules.
+- [server/flight-prices/booking-links.js](server/flight-prices/booking-links.js) — Aviasales search URLs (single + multi-segment) on priced legs.
+- [server/flight-prices/popular-hubs.js](server/flight-prices/popular-hubs.js) — `PORTO_DUBAI_TRANSFER_HUBS` and `PORTO_RETURN_FALLBACK_HUBS`, plus `findPopularRouteTarget` / `popularTransferRoutes` / `isReplaceablePopularRoute`. **Add a new transfer hub here** and register its IATA in `iata-codes.js`.
+- [server/flight-prices/progress.js](server/flight-prices/progress.js) — `emitProgress` + provider progress messages; `PRICE_COMPARE_PROGRESS_DETAIL` env controls verbosity.
+- [server/flight-prices/provider-state.js](server/flight-prices/provider-state.js) — per-search disabled-provider bookkeeping.
+- [server/flight-prices/provider-labels.js](server/flight-prices/provider-labels.js) — human-readable provider labels + `configuredProviders`.
+- [server/flight-prices/cache-keys.js](server/flight-prices/cache-keys.js) — stable cache-key hashing, `cacheableLeg`, `cloneQuote`, `markQuote*FromCache`.
+- [server/flight-prices/route-options.js](server/flight-prices/route-options.js) — `compactRouteOptions`, `buildSkippedRouteOption`, `formatStayFlex`, `formatCandidatePrice`.
+- [server/flight-prices/money.js](server/flight-prices/money.js) — `roundMoney`, `addHoursToDate`, `formatStayDays`.
+
+### Common change recipes
+
+- **Add a new city as a planner stop:** add it to `cityOptions` in [src/App.vue](src/App.vue), and add the IATA mapping in [server/iata-codes.js](server/iata-codes.js).
+- **Add a new price provider:** add `quoteLegWith<Name>(leg)` in [server/flight-prices/providers.js](server/flight-prices/providers.js), register it in the `providers` cascade in [server/flight-prices/leg-quoter.js](server/flight-prices/leg-quoter.js), and add its label in [server/flight-prices/provider-labels.js](server/flight-prices/provider-labels.js).
+- **Adjust baggage chip text/colors on the card:** [src/LegCard.vue](src/LegCard.vue) (`legBaggageChips` derivation + `.leg-chip--*` scoped styles).
+- **Tweak baggage rules for a carrier:** see "Baggage Allowance Curation" below; the runtime path is [server/flight-prices/baggage-from-offer.js](server/flight-prices/baggage-from-offer.js).
+- **Change the route-optimization algorithm:** [server/flight-prices.js](server/flight-prices.js); read [docs/algorithm-regressions.md](docs/algorithm-regressions.md) first.
+
 ## Algorithm Regression Log
 
 Route optimization and pricing-search changes must keep [docs/algorithm-regressions.md](docs/algorithm-regressions.md) up to date.
