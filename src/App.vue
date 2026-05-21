@@ -627,6 +627,18 @@ function legProvider(index) {
   return activePriceLeg(index)?.provider || null;
 }
 
+function legAirline(index) {
+  const pricedLeg = activePriceLeg(index);
+  if (!pricedLeg?.airline && !pricedLeg?.carrier) return null;
+  const label = pricedLeg.airline?.code
+    ? `${pricedLeg.airline.name} (${pricedLeg.airline.code})`
+    : pricedLeg.airline?.name || pricedLeg.carrier;
+  return {
+    label,
+    website: pricedLeg.airline?.website || null
+  };
+}
+
 function legBaggage(index) {
   const baggage = activePriceLeg(index)?.baggageAllowance;
   return baggage?.summary || null;
@@ -864,6 +876,18 @@ optimize();
                 {{ legPrice(index) }} USD<span v-if="legProvider(index)"> via {{ legProvider(index) }}</span>
               </p>
               <p v-else-if="legPriceError(index)" class="leg-price-missing">{{ legPriceError(index) }}</p>
+              <p v-if="legAirline(index)" class="leg-airline">
+                Airline:
+                <a
+                  v-if="legAirline(index).website"
+                  :href="legAirline(index).website"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {{ legAirline(index).label }}
+                </a>
+                <span v-else>{{ legAirline(index).label }}</span>
+              </p>
               <p v-if="legBaggage(index)" class="leg-baggage">Bags: {{ legBaggage(index) }}</p>
               <a
                 v-if="legBooking(index)"

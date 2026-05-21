@@ -165,6 +165,11 @@ describe('flight price providers', () => {
 
     assert.equal(quote.legs[0].baggageAllowance.source, 'aviasales');
     assert.match(quote.legs[0].baggageAllowance.summary, /did not return baggage allowance/);
+    assert.deepEqual(quote.legs[0].airline, {
+      code: 'TP',
+      name: 'TAP Air Portugal',
+      website: 'https://www.flytap.com/'
+    });
   });
 
   it('emits route comparison progress for popular transfer checks', async () => {

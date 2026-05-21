@@ -23,6 +23,7 @@ The app returns:
 - An optimized route with dates, modes, durations, and distances.
 - Stay separators between route legs.
 - Flight price estimates when providers return USD fares.
+- Airline name and official website link for each priced flight when the carrier can be resolved.
 - Baggage allowance text for each flight when providers return it, or an explicit check-fare-rules note when they do not.
 - Transfer alternatives for expensive or unpriced popular route segments.
 - A log explaining provider attempts, cache hits, skipped candidates, and selected replacements.
@@ -75,6 +76,8 @@ Expected behavior:
 - Cache successful price results and provider-level no-price results for one hour.
 - Do not cache missing credentials or transient provider failures.
 - Display partial price results when not every flight leg has a USD fare.
+- Display the operating/marketing airline carrier returned by the provider for each priced leg.
+- Resolve known carrier codes to readable airline names and official airline websites; keep unknown carrier text visible without inventing a link.
 - Display baggage allowance per flight leg from normalized provider data.
 - When a provider does not return baggage allowance, show that the allowance is unknown and must be checked before booking.
 

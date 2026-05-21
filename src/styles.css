@@ -603,6 +603,19 @@ h2 {
   font-weight: 800;
 }
 
+.leg-airline {
+  margin-top: 4px;
+  color: #40545c;
+  font-weight: 700;
+}
+
+.leg-airline a {
+  color: #0f5d57;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
 .leg-baggage {
   margin-top: 4px;
   color: #40545c;

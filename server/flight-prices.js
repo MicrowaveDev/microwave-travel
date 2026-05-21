@@ -11,6 +11,7 @@ import {
   getCachedFlightPrice,
   setCachedFlightPrice
 } from './flight-price-cache.js';
+import { airlineInfoForCarrier } from './airlines.js';
 import { rankTransferRoutes } from './route-intelligence.js';
 
 const CITY_IATA_CODES = new Map([
@@ -1298,7 +1299,7 @@ async function getAmadeusToken() {
 }
 
 function normalizeQuote(provider, legs, attempts = []) {
-  const normalizedInputLegs = legs.map(withNormalizedBaggage);
+  const normalizedInputLegs = legs.map((leg) => withNormalizedAirline(withNormalizedBaggage(leg)));
   const priced = normalizedInputLegs.filter((leg) => Number.isFinite(leg.amount));
   const activeProviders = [...new Set(normalizedInputLegs.map((leg) => leg.provider).filter(Boolean))];
   const normalizedLegs = addBookingLinks(normalizedInputLegs.map((leg) => ({
@@ -1330,6 +1331,12 @@ function withNormalizedBaggage(leg) {
     ...leg,
     baggageAllowance: unknownBaggageAllowance(leg.provider)
   };
+}
+
+function withNormalizedAirline(leg) {
+  if (!leg || leg.mode === 'bus' || leg.airline || !leg.carrier) return leg;
+  const airline = airlineInfoForCarrier(leg.carrier);
+  return airline ? { ...leg, airline } : leg;
 }
 
 function addBookingLinks(legs) {

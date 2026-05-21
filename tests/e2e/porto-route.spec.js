@@ -26,6 +26,8 @@ test('prices the Porto route with date-flex transfer options', async ({ page }) 
   await expect(page.getByText('Madrid to Dubai')).toBeVisible();
   await expect(page.getByText('Dubai to Moscow')).toBeVisible();
   await expect(page.getByText('2026-05-24 · flight')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Ryanair (FR)' })).toHaveAttribute('href', 'https://www.ryanair.com/');
+  await expect(page.getByRole('link', { name: 'Pegasus Airlines (PC)' })).toHaveAttribute('href', 'https://www.flypgs.com/');
   await expect(page.getByText('Bags: Small cabin bag included; checked bag costs extra.')).toBeVisible();
   await expect(page.getByText('Bags: Cabin bag included; checked baggage depends on fare.')).toBeVisible();
   await expect(page.getByText('Stay 3 days in Dubai')).toBeVisible();
