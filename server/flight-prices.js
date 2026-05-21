@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { buildLegsForRoute } from './optimizer.js';
 import {
   formatDateOnly,
@@ -20,41 +19,26 @@ import {
   setDisabledProviderReason
 } from './flight-price-cache.js';
 import { airlineInfoForCarrier } from './airlines.js';
-import { baggageAllowanceForCarrier } from './baggage-allowances.js';
 import { rankTransferRoutes } from './route-intelligence.js';
+import { isRussianDirection, sameCityName, toIataCode } from './iata-codes.js';
+import { configuredProviders, providerLabel } from './flight-prices/provider-labels.js';
+import {
+  cacheableLeg,
+  cloneQuote,
+  markQuoteBundleFromCache,
+  markQuoteFromCache,
+  sortForStableJson,
+  stableCacheKey
+} from './flight-prices/cache-keys.js';
+import { withNormalizedBaggage } from './flight-prices/baggage-from-offer.js';
+import {
+  quoteLegWithSerpApi,
+  quoteLegWithTravelpayouts,
+  quoteLegWithYandexRasp,
+  tryProvider
+} from './flight-prices/providers.js';
+import { addBookingLinks } from './flight-prices/booking-links.js';
 
-const CITY_IATA_CODES = new Map([
-  ['porto', 'OPO'],
-  ['doha', 'DOH'],
-  ['dubai', 'DXB'],
-  ['gdansk', 'GDN'],
-  ['lisbon', 'LIS'],
-  ['istanbul', 'IST'],
-  ['belgrade', 'BEG'],
-  ['warsaw', 'WAW'],
-  ['madrid', 'MAD'],
-  ['barcelona', 'BCN'],
-  ['milan', 'MIL'],
-  ['rome', 'ROM'],
-  ['paris', 'PAR'],
-  ['frankfurt', 'FRA'],
-  ['athens', 'ATH'],
-  ['vienna', 'VIE'],
-  ['zurich', 'ZRH'],
-  ['amsterdam', 'AMS'],
-  ['kaliningrad', 'KGD'],
-  ['moscow', 'MOW'],
-  ['moskow', 'MOW'],
-  ['saint petersburg', 'LED'],
-  ['st petersburg', 'LED'],
-  ['st. petersburg', 'LED'],
-  ['sankt petersburg', 'LED'],
-  ['spb', 'LED'],
-  ['led', 'LED']
-]);
-
-const RUSSIAN_CITY_NAMES = new Set(['Kaliningrad', 'Moscow', 'Saint Petersburg']);
-const RUSSIAN_IATA_CODES = new Set(['KGD', 'MOW', 'SVO', 'DME', 'VKO', 'LED']);
 const PORTO_DUBAI_TRANSFER_HUBS = [
   'Doha',
   'Istanbul',
@@ -82,7 +66,6 @@ const PRICE_ROUTE_ANALYSIS_CACHE_TTL_MS = Number(process.env.PRICE_ROUTE_ANALYSI
 const PRICE_BUNDLE_CACHE_TTL_MS = Number(process.env.PRICE_BUNDLE_CACHE_TTL_MS || LEG_QUOTE_CACHE_TTL_MS);
 const PROVIDER_DISABLE_CACHE_TTL_MS = Number(process.env.PROVIDER_DISABLE_CACHE_TTL_MS || 30 * 60 * 1000);
 const AVIASALES_SEARCH_BASE_URL = process.env.AVIASALES_SEARCH_BASE_URL || 'https://search.aviasales.com/flights/';
-let amadeusTokenCache = null;
 
 export async function quoteFlightPrices(input, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
@@ -504,10 +487,6 @@ function parseIsoDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
 }
 
-function sameCityName(left, right) {
-  return String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase();
-}
-
 function buildOptimizedRouteOption({
   candidate,
   currentSuffix,
@@ -903,111 +882,6 @@ function sameDisplayLeg(displayLeg, quotedLeg) {
   return displayLeg.from === quotedLeg.from && displayLeg.to === quotedLeg.to && displayLeg.departOn === quotedLeg.departureDate;
 }
 
-async function tryProvider(name, fn) {
-  try {
-    return {
-      quote: await fn(),
-      summary: { provider: name, ok: true }
-    };
-  } catch (error) {
-    return {
-      quote: null,
-      summary: { provider: name, ok: false, error: error.message }
-    };
-  }
-}
-
-async function quoteWithAmadeus(legs) {
-  assertEnv('AMADEUS_CLIENT_ID');
-  assertEnv('AMADEUS_CLIENT_SECRET');
-
-  const token = await getAmadeusToken();
-  const pricedLegs = [];
-
-  for (const leg of legs) {
-    const params = new URLSearchParams({
-      originLocationCode: leg.origin,
-      destinationLocationCode: leg.destination,
-      departureDate: leg.departureDate,
-      adults: String(leg.passengers || 1),
-      currencyCode: 'USD',
-      max: '1'
-    });
-    const response = await fetch(`${amadeusBaseUrl()}/v2/shopping/flight-offers?${params}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/json'
-      }
-    });
-    const payload = await readJson(response);
-    if (!response.ok) {
-      throw new Error(providerError(payload, `Amadeus failed for ${leg.origin}-${leg.destination}`));
-    }
-
-    const offer = payload.data?.[0];
-    pricedLegs.push({
-      ...leg,
-      amount: offer ? Number(offer.price?.grandTotal || offer.price?.total) : null,
-      currency: offer?.price?.currency || 'USD',
-      providerOfferId: offer?.id || null,
-      carrier: offer?.validatingAirlineCodes?.[0] || null,
-      baggageAllowance: baggageAllowanceFromOffer('amadeus', offer)
-    });
-  }
-
-  return normalizeQuote('amadeus', pricedLegs);
-}
-
-async function quoteWithSerpApi(legs) {
-  assertEnv('SERPAPI_KEY');
-
-  const pricedLegs = [];
-
-  for (const leg of legs) {
-    const params = new URLSearchParams({
-      engine: 'google_flights',
-      type: '2',
-      departure_id: leg.origin,
-      arrival_id: leg.destination,
-      outbound_date: leg.departureDate,
-      currency: 'USD',
-      adults: String(leg.passengers || 1),
-      sort_by: '2',
-      api_key: process.env.SERPAPI_KEY
-    });
-    const response = await fetch(`https://serpapi.com/search?${params}`);
-    const payload = await readJson(response);
-    if (!response.ok) {
-      throw new Error(payload.error || `SerpApi failed for ${leg.origin}-${leg.destination}`);
-    }
-    if (payload.error) {
-      pricedLegs.push({
-        ...leg,
-        amount: null,
-        currency: 'USD',
-        providerOfferId: payload.search_metadata?.id || null,
-        carrier: null,
-        baggageAllowance: unknownBaggageAllowance('serpapi'),
-        error: payload.error
-      });
-      continue;
-    }
-
-    const offer = payload.best_flights?.[0] || payload.other_flights?.[0] || payload.flights?.[0];
-    pricedLegs.push({
-      ...leg,
-      amount: typeof offer?.price === 'number' ? offer.price : null,
-      currency: 'USD',
-      providerOfferId: payload.search_metadata?.id || null,
-      carrier: offer?.flights?.[0]?.airline || null,
-      baggageAllowance: baggageAllowanceFromOffer('serpapi', offer),
-      error: offer ? null : 'No flights found for this leg.'
-    });
-  }
-
-  return normalizeQuote('serpapi', pricedLegs);
-}
-
 async function quoteLeg(leg, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const providerState = options.providerState || createProviderState();
@@ -1187,26 +1061,6 @@ function shouldDisableProvider(provider, errorMessage = '') {
   return /rate limit|too many requests|429/i.test(errorMessage);
 }
 
-function cloneQuote(quote) {
-  return quote ? JSON.parse(JSON.stringify(quote)) : null;
-}
-
-function markQuoteFromCache(quote, cacheType) {
-  const cachedQuote = cloneQuote(quote);
-  cachedQuote.cached = true;
-  cachedQuote.cacheType = cacheType;
-  if (Array.isArray(cachedQuote.attempts)) {
-    cachedQuote.attempts = cachedQuote.attempts.map((attempt) => ({ ...attempt, cached: true }));
-  }
-  return cachedQuote;
-}
-
-function markQuoteBundleFromCache(bundle) {
-  const cachedBundle = cloneQuote(bundle) || { legs: [], attempts: [] };
-  cachedBundle.attempts = (cachedBundle.attempts || []).map((attempt) => ({ ...attempt, cached: true, bundleCached: true }));
-  return cachedBundle;
-}
-
 function routeAnalysisCacheKey({ legs, requirements, passengers }) {
   return stableCacheKey('route-analysis', {
     version: 4,
@@ -1229,35 +1083,6 @@ function legBundleCacheKey(scope, legs, details = {}) {
       providers: priceCacheConfig().providers
     }
   });
-}
-
-function stableCacheKey(prefix, value) {
-  return `${prefix}|${createHash('sha256').update(JSON.stringify(sortForStableJson(value))).digest('hex')}`;
-}
-
-function sortForStableJson(value) {
-  if (Array.isArray(value)) return value.map(sortForStableJson);
-  if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(Object.keys(value)
-    .sort()
-    .map((key) => [key, sortForStableJson(value[key])]));
-}
-
-function cacheableLeg(leg) {
-  return {
-    from: leg.from,
-    to: leg.to,
-    origin: leg.origin,
-    destination: leg.destination,
-    mode: leg.mode,
-    departureDate: leg.departureDate || leg.departOn,
-    arriveBy: leg.arriveBy,
-    durationHours: leg.durationHours,
-    distanceKm: leg.distanceKm,
-    passengers: leg.passengers || 1,
-    stayHoursAfter: leg.stayHoursAfter || 0,
-    stayDaysAfter: leg.stayDaysAfter || 0
-  };
 }
 
 function priceCacheConfig() {
@@ -1307,237 +1132,6 @@ function routeOptionCompactKey(option) {
   ].join('|');
 }
 
-async function quoteLegWithSerpApi(leg) {
-  assertEnv('SERPAPI_KEY');
-
-  const params = new URLSearchParams({
-    engine: 'google_flights',
-    type: '2',
-    departure_id: leg.origin,
-    arrival_id: leg.destination,
-    outbound_date: leg.departureDate,
-    currency: 'USD',
-    adults: String(leg.passengers || 1),
-    sort_by: '2',
-    api_key: process.env.SERPAPI_KEY
-  });
-  const response = await fetch(`https://serpapi.com/search?${params}`);
-  const payload = await readJson(response);
-  if (!response.ok || payload.error) {
-    throw new Error(payload.error || `SerpApi failed for ${leg.origin}-${leg.destination}`);
-  }
-
-  const offer = payload.best_flights?.[0] || payload.other_flights?.[0] || payload.flights?.[0];
-  return {
-    ...leg,
-    amount: typeof offer?.price === 'number' ? offer.price : null,
-    currency: 'USD',
-    provider: 'serpapi',
-    providerOfferId: payload.search_metadata?.id || null,
-    carrier: offer?.flights?.[0]?.airline || null,
-    baggageAllowance: baggageAllowanceFromOffer('serpapi', offer),
-    error: offer ? null : 'No flights found for this leg.'
-  };
-}
-
-async function quoteLegWithTravelpayouts(leg) {
-  assertEnv('TRAVELPAYOUTS_TOKEN');
-
-  const params = new URLSearchParams({
-    origin: leg.origin,
-    destination: leg.destination,
-    departure_at: leg.departureDate,
-    currency: 'usd',
-    market: 'ru',
-    one_way: 'true',
-    direct: 'false',
-    sorting: 'price',
-    limit: '1',
-    token: process.env.TRAVELPAYOUTS_TOKEN
-  });
-  const response = await fetch(`https://api.travelpayouts.com/aviasales/v3/prices_for_dates?${params}`);
-  const payload = await readJson(response);
-  if (!response.ok || payload.success === false) {
-    throw new Error(payload.error || `Aviasales failed for ${leg.origin}-${leg.destination}`);
-  }
-
-  const offer = payload.data?.[0];
-  return {
-    ...leg,
-    amount: Number.isFinite(offer?.price) ? offer.price : null,
-    currency: (offer?.currency || 'USD').toUpperCase(),
-    provider: 'aviasales',
-    providerOfferId: offer?.search_id || offer?.signature || null,
-    carrier: offer?.airline || null,
-    baggageAllowance: baggageAllowanceFromOffer('aviasales', offer),
-    error: offer ? null : 'Aviasales did not return cached prices for this leg.'
-  };
-}
-
-async function quoteLegWithYandexRasp(leg) {
-  assertEnv('YANDEX_RASP_API_KEY');
-
-  const params = new URLSearchParams({
-    apikey: process.env.YANDEX_RASP_API_KEY,
-    format: 'json',
-    from: leg.origin,
-    to: leg.destination,
-    system: 'iata',
-    show_systems: 'iata',
-    lang: 'en_US',
-    date: leg.departureDate,
-    transport_types: 'plane,train,bus',
-    transfers: 'true',
-    limit: '5'
-  });
-  const response = await fetch(`https://api.rasp.yandex-net.ru/v3.0/search/?${params}`);
-  const payload = await readJson(response);
-  if (!response.ok || payload.error) {
-    throw new Error(payload.error?.text || payload.error || `Yandex Rasp failed for ${leg.origin}-${leg.destination}`);
-  }
-
-  const segment = [...(payload.segments || []), ...(payload.interval_segments || [])].find(Boolean);
-  if (!segment) {
-    return { ...leg, amount: null, currency: 'USD', provider: 'yandex-rasp', error: 'Yandex Rasp did not return schedule options for this leg.' };
-  }
-  const place = segment.tickets_info?.places?.find((item) => item.price?.whole);
-  return {
-    ...leg,
-    amount: null,
-    currency: 'USD',
-    provider: 'yandex-rasp',
-    providerOfferId: segment.thread?.uid || null,
-    carrier: segment.thread?.carrier?.title || null,
-    baggageAllowance: unknownBaggageAllowance('yandex-rasp'),
-    schedule: {
-      transportType: segment.thread?.transport_type || segment.from?.transport_type || null,
-      departure: segment.departure || null,
-      arrival: segment.arrival || null,
-      durationSeconds: segment.duration || null,
-      rubPrice: place?.price?.whole || null
-    },
-    error: place?.price?.whole
-      ? `Yandex Rasp found a ${place.price.whole} RUB fare; USD conversion is not connected yet.`
-      : 'Yandex Rasp found schedule options, but no USD price.'
-  };
-}
-
-function baggageAllowanceFromOffer(provider, offer) {
-  if (!offer) return null;
-  const parts = uniqueStrings([
-    ...collectBaggageStrings(offer),
-    ...collectBaggageStrings(offer.baggage),
-    ...collectBaggageStrings(offer.baggage_allowance),
-    ...collectBaggageStrings(offer.baggageAllowance),
-    ...collectBaggageStrings(offer.included_baggage),
-    ...collectBaggageStrings(offer.includedBaggage),
-    ...collectBaggageStrings(offer.handbags),
-    ...collectBaggageStrings(offer.hand_baggage),
-    ...collectBaggageStrings(offer.carry_on),
-    ...collectBaggageStrings(offer.carryOn),
-    ...collectBaggageStrings(offer.checked_baggage),
-    ...collectBaggageStrings(offer.checkedBaggage),
-    ...(Array.isArray(offer.flights) ? offer.flights.flatMap((flight) => collectBaggageStrings(flight)) : [])
-  ]);
-  if (parts.length === 0) return null;
-  return {
-    source: provider,
-    summary: parts.slice(0, 3).join('; '),
-    details: parts
-  };
-}
-
-function collectBaggageStrings(value) {
-  if (!value) return [];
-  if (typeof value === 'string') {
-    return baggageTextLooksRelevant(value) ? [normalizeBaggageText(value)] : [];
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') return [];
-  if (Array.isArray(value)) return value.flatMap(collectBaggageStrings);
-  if (typeof value !== 'object') return [];
-  return Object.entries(value).flatMap(([key, nested]) => {
-    if (baggageKeyLooksRelevant(key)) {
-      const direct = formatBaggageField(key, nested);
-      if (direct) return [direct, ...collectBaggageStrings(nested)];
-    }
-    return typeof nested === 'object' ? collectBaggageStrings(nested) : [];
-  });
-}
-
-function baggageKeyLooksRelevant(key) {
-  return /bag|baggage|luggage|carry|handbag|personal_item|personal item|checked/i.test(key);
-}
-
-function baggageTextLooksRelevant(text) {
-  return /bag|baggage|luggage|carry[- ]?on|handbag|personal item|checked/i.test(text);
-}
-
-function formatBaggageField(key, value) {
-  if (typeof value === 'string') return normalizeBaggageText(value);
-  if (typeof value === 'number') return `${humanizeBaggageKey(key)}: ${value}`;
-  if (typeof value === 'boolean') return `${humanizeBaggageKey(key)}: ${value ? 'included' : 'not included'}`;
-  return null;
-}
-
-function normalizeBaggageText(text) {
-  return String(text).replace(/\s+/g, ' ').trim();
-}
-
-function humanizeBaggageKey(key) {
-  return String(key)
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^\w/, (letter) => letter.toUpperCase());
-}
-
-function uniqueStrings(values) {
-  const seen = new Set();
-  return values.filter((value) => {
-    const normalized = normalizeBaggageText(value);
-    if (!normalized || seen.has(normalized.toLowerCase())) return false;
-    seen.add(normalized.toLowerCase());
-    return true;
-  });
-}
-
-function unknownBaggageAllowance(provider) {
-  return {
-    source: provider,
-    summary: `${providerLabel(provider)} did not return baggage allowance; check fare rules before booking.`,
-    details: [],
-    included: null
-  };
-}
-
-async function getAmadeusToken() {
-  if (amadeusTokenCache && amadeusTokenCache.expiresAt > Date.now() + 30_000) {
-    return amadeusTokenCache.token;
-  }
-
-  const body = new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: process.env.AMADEUS_CLIENT_ID,
-    client_secret: process.env.AMADEUS_CLIENT_SECRET
-  });
-  const response = await fetch(`${amadeusBaseUrl()}/v1/security/oauth2/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body
-  });
-  const payload = await readJson(response);
-  if (!response.ok) {
-    throw new Error(providerError(payload, 'Amadeus authentication failed'));
-  }
-
-  amadeusTokenCache = {
-    token: payload.access_token,
-    expiresAt: Date.now() + Number(payload.expires_in || 0) * 1000
-  };
-  return amadeusTokenCache.token;
-}
-
 function normalizeQuote(provider, legs, attempts = []) {
   const normalizedInputLegs = legs.map((leg) => withNormalizedAirline(withNormalizedBaggage(leg)));
   const priced = normalizedInputLegs.filter((leg) => Number.isFinite(leg.amount));
@@ -1565,147 +1159,10 @@ function normalizeQuote(provider, legs, attempts = []) {
   };
 }
 
-function withNormalizedBaggage(leg) {
-  if (!leg || leg.mode === 'bus' || !leg.provider) return leg;
-  if (leg.baggageAllowance && !baggageAllowanceIsUnknown(leg.baggageAllowance)) return leg;
-  const localAllowance = baggageAllowanceForCarrier(leg.carrier, {
-    fareType: leg.fareType || leg.ticketType || leg.fareClass
-  });
-  if (localAllowance) {
-    return {
-      ...leg,
-      baggageAllowance: localAllowance
-    };
-  }
-  return {
-    ...leg,
-    baggageAllowance: unknownBaggageAllowance(leg.provider)
-  };
-}
-
-function baggageAllowanceIsUnknown(baggageAllowance) {
-  return (
-    !baggageAllowance ||
-    (
-      Array.isArray(baggageAllowance.details) &&
-      baggageAllowance.details.length === 0 &&
-      /did not return baggage allowance/i.test(baggageAllowance.summary || '')
-    )
-  );
-}
-
 function withNormalizedAirline(leg) {
   if (!leg || leg.mode === 'bus' || leg.airline || !leg.carrier) return leg;
   const airline = airlineInfoForCarrier(leg.carrier);
   return airline ? { ...leg, airline } : leg;
-}
-
-function addBookingLinks(legs) {
-  const linkedLegs = legs.map(addBookingLink);
-  for (const group of contiguousFlightGroups(linkedLegs)) {
-    if (group.length < 2) continue;
-    const url = buildAviasalesSearchUrlForLegs(group);
-    if (!url) continue;
-    const route = group.map((leg) => leg.from).concat(group.at(-1).to).join(' -> ');
-    for (const leg of group) {
-      leg.bookingGroupUrl = url;
-      leg.bookingGroupLabel = 'Search transfer route';
-      leg.bookingGroupNote = `Search ${route}; compare final checkout price before booking.`;
-    }
-  }
-  return linkedLegs;
-}
-
-function addBookingLink(leg) {
-  if (leg.mode === 'bus' || !leg.origin || !leg.destination || !leg.departureDate) return leg;
-  const url = buildAviasalesSearchUrlForLegs([leg]);
-  if (!url) return leg;
-  const hasAffiliateMarker = Boolean(process.env.TRAVELPAYOUTS_MARKER);
-  return {
-    ...leg,
-    bookingUrl: url,
-    bookingProvider: 'aviasales',
-    bookingLabel: hasAffiliateMarker ? 'Affiliate search link' : 'Search booking options',
-    bookingNote: hasAffiliateMarker
-      ? 'Affiliate link; final checkout price may differ.'
-      : 'Search link; compare final checkout price before booking.'
-  };
-}
-
-function contiguousFlightGroups(legs) {
-  const groups = [];
-  let current = [];
-  for (const leg of legs) {
-    const canContinue = current.length > 0 &&
-      current.at(-1).destination === leg.origin &&
-      !current.at(-1).stayHoursAfter &&
-      leg.mode !== 'bus' &&
-      leg.origin &&
-      leg.destination &&
-      leg.departureDate;
-    if (!canContinue && current.length > 0) {
-      groups.push(current);
-      current = [];
-    }
-    if (leg.mode !== 'bus' && leg.origin && leg.destination && leg.departureDate) {
-      current.push(leg);
-    }
-  }
-  if (current.length > 0) groups.push(current);
-  return groups;
-}
-
-function buildAviasalesSearchUrlForLegs(legs) {
-  try {
-    const url = new URL(AVIASALES_SEARCH_BASE_URL);
-    const params = new URLSearchParams({
-      adults: String(normalizePassengerCount(legs.find((leg) => leg.passengers)?.passengers)),
-      children: '0',
-      infants: '0',
-      trip_class: '0',
-      currency: 'USD',
-      locale: 'en',
-      ...(process.env.TRAVELPAYOUTS_MARKER ? { marker: process.env.TRAVELPAYOUTS_MARKER } : {})
-    });
-    if (legs.length === 1) {
-      params.set('origin_iata', legs[0].origin);
-      params.set('destination_iata', legs[0].destination);
-      params.set('depart_date', legs[0].departureDate);
-      params.set('oneway', '1');
-    } else {
-      legs.forEach((leg, index) => {
-        params.set(`segments[${index}][origin_iata]`, leg.origin);
-        params.set(`segments[${index}][destination_iata]`, leg.destination);
-        params.set(`segments[${index}][depart_date]`, leg.departureDate);
-      });
-    }
-    url.search = params.toString();
-    return url.toString();
-  } catch {
-    return null;
-  }
-}
-
-function configuredProviders() {
-  return [
-    process.env.SERPAPI_KEY ? 'serpapi' : null,
-    process.env.TRAVELPAYOUTS_TOKEN ? 'aviasales' : null,
-    process.env.YANDEX_RASP_API_KEY ? 'yandex-rasp' : null,
-    process.env.AMADEUS_CLIENT_ID && process.env.AMADEUS_CLIENT_SECRET ? 'amadeus' : null
-  ].filter(Boolean);
-}
-
-function providerLabel(provider) {
-  return provider
-    .split(', ')
-    .map((name) => {
-      if (name === 'serpapi') return 'SerpApi Google Flights';
-      if (name === 'aviasales') return 'Aviasales';
-      if (name === 'yandex-rasp') return 'Yandex Rasp';
-      if (name === 'amadeus') return 'Amadeus';
-      return name;
-    })
-    .join(', ');
 }
 
 function normalizeLegs(legs, passengers = 1) {
@@ -1727,47 +1184,6 @@ function normalizePassengerCount(value) {
   const count = Number(value);
   if (!Number.isInteger(count)) return 1;
   return Math.min(9, Math.max(1, count));
-}
-
-function isRussianDirection(leg) {
-  return (
-    RUSSIAN_CITY_NAMES.has(leg.from) ||
-    RUSSIAN_CITY_NAMES.has(leg.to) ||
-    RUSSIAN_IATA_CODES.has(leg.origin) ||
-    RUSSIAN_IATA_CODES.has(leg.destination)
-  );
-}
-
-function toIataCode(city) {
-  const value = String(city || '').trim();
-  if (/^[A-Z]{3}$/.test(value)) return value;
-  const code = CITY_IATA_CODES.get(value.toLowerCase());
-  if (!code) {
-    throw new Error(`No IATA code configured for ${value}. Use a 3-letter airport/city code for pricing.`);
-  }
-  return code;
-}
-
-function amadeusBaseUrl() {
-  return process.env.AMADEUS_BASE_URL || 'https://test.api.amadeus.com';
-}
-
-function assertEnv(name) {
-  if (!process.env[name]) {
-    throw new Error(`${name} is not configured`);
-  }
-}
-
-async function readJson(response) {
-  try {
-    return await response.json();
-  } catch {
-    return {};
-  }
-}
-
-function providerError(payload, fallback) {
-  return payload.errors?.[0]?.detail || payload.error_description || payload.error || fallback;
 }
 
 function addHoursToDate(date, hours) {
