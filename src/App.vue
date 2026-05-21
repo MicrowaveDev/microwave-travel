@@ -769,6 +769,91 @@ function legPriceError(index) {
   return activePriceLeg(index)?.error || null;
 }
 
+function legOriginCode(index) {
+  const leg = plan.value?.legs?.[index];
+  return activePriceLeg(index)?.origin || cityCodeFallback(leg?.from);
+}
+
+function legDestinationCode(index) {
+  const leg = plan.value?.legs?.[index];
+  return activePriceLeg(index)?.destination || cityCodeFallback(leg?.to);
+}
+
+function cityCodeFallback(city) {
+  const value = String(city || '').trim();
+  if (!value) return '';
+  if (/^[A-Z]{2,4}$/.test(value)) return value;
+  const letters = value.replace(/[^A-Za-z]/g, '');
+  return letters.slice(0, 3).toUpperCase();
+}
+
+function formatLegDate(value) {
+  if (!value) return '';
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function legDurationLabel(leg) {
+  const hours = Number(leg?.hours);
+  if (!Number.isFinite(hours) || hours <= 0) return '';
+  const whole = Math.floor(hours);
+  const minutes = Math.round((hours - whole) * 60);
+  if (whole === 0) return `${minutes}m`;
+  if (minutes === 0) return `${whole}h`;
+  return `${whole}h ${minutes}m`;
+}
+
+function legArrivesLater(leg) {
+  return Boolean(leg?.arriveBy && leg?.departOn && leg.arriveBy !== leg.departOn);
+}
+
+function legModeLabel(leg) {
+  if (leg?.mode === 'bus') return 'Bus';
+  if (leg?.mode === 'train') return 'Train';
+  return 'Direct';
+}
+
+function legBaggageChips(index) {
+  const allowance = activePriceLeg(index)?.baggageAllowance;
+  if (!allowance) return [];
+  const chips = [];
+  for (const detail of allowance.details || []) {
+    const match = /^(Cabin|Checked):\s*(.+)$/i.exec(String(detail));
+    if (!match) continue;
+    const label = match[1];
+    const text = match[2].trim();
+    chips.push({
+      label,
+      text: shortenBaggageDetail(text),
+      state: baggageChipState(text)
+    });
+  }
+  if (!chips.length && allowance.fareType) {
+    chips.push({ label: 'Fare', text: capitalize(allowance.fareType), state: 'info' });
+  }
+  return chips;
+}
+
+function shortenBaggageDetail(text) {
+  const trimmed = String(text).replace(/\s+/g, ' ').trim();
+  if (trimmed.length <= 38) return trimmed;
+  return `${trimmed.slice(0, 36).trim()}…`;
+}
+
+function baggageChipState(text) {
+  const lower = String(text).toLowerCase();
+  if (/not included|not allowed|n\/a/.test(lower)) return 'excluded';
+  if (/depends|varies|may need|extra|paid|purchase|add-on/.test(lower)) return 'optional';
+  return 'included';
+}
+
+function capitalize(value) {
+  const str = String(value || '');
+  return str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
+}
+
+
 function activePriceLeg(index) {
   const leg = plan.value?.legs?.[index];
   if (!leg) return null;
@@ -965,40 +1050,79 @@ optimize();
         <template v-for="(leg, index) in plan.legs" :key="`${leg.from}-${leg.to}-${index}`">
           <article class="leg-card">
             <div class="leg-index">{{ index + 1 }}</div>
-            <div>
-              <h2>{{ leg.from }} to {{ leg.to }}</h2>
-              <p>
-                {{ leg.departOn }} · {{ leg.mode }} · {{ leg.hours }}h · {{ leg.distanceKm.toLocaleString() }} km · arrive by
-                {{ leg.arriveBy }}
-              </p>
-              <p v-if="legPrice(index)" class="leg-price">
-                {{ legPrice(index) }} USD<span v-if="legProvider(index)"> via {{ legProvider(index) }}</span>
-              </p>
-              <p v-else-if="legPriceError(index)" class="leg-price-missing">{{ legPriceError(index) }}</p>
-              <p v-if="legAirline(index)" class="leg-airline">
-                Airline:
+            <div class="leg-body">
+              <header class="leg-header">
+                <h2>{{ leg.from }} <span class="leg-arrow" aria-hidden="true">→</span> {{ leg.to }}</h2>
+                <div class="leg-price-block">
+                  <span v-if="legPrice(index)" class="leg-price">{{ legPrice(index) }}</span>
+                  <span v-if="legPrice(index) && legProvider(index)" class="leg-price-provider">via {{ legProvider(index) }}</span>
+                  <span v-if="!legPrice(index) && legPriceError(index)" class="leg-price-missing">{{ legPriceError(index) }}</span>
+                </div>
+              </header>
+
+              <div class="leg-strip" :class="{ 'is-bus': leg.mode === 'bus' }">
+                <div class="leg-strip-end">
+                  <span class="leg-code">{{ legOriginCode(index) }}</span>
+                  <span class="leg-city">{{ leg.from }}</span>
+                  <span class="leg-date">{{ formatLegDate(leg.departOn) }}</span>
+                </div>
+                <div class="leg-strip-middle">
+                  <span class="leg-duration">{{ legDurationLabel(leg) }} · {{ legModeLabel(leg) }}</span>
+                  <span class="leg-strip-line" aria-hidden="true">
+                    <span class="leg-strip-dot leg-strip-dot--start"></span>
+                    <span class="leg-strip-icon">{{ leg.mode === 'bus' ? '⇢' : '✈' }}</span>
+                    <span class="leg-strip-dot leg-strip-dot--end"></span>
+                  </span>
+                  <span class="leg-distance">{{ leg.distanceKm.toLocaleString() }} km</span>
+                </div>
+                <div class="leg-strip-end leg-strip-end--arrival">
+                  <span class="leg-code">{{ legDestinationCode(index) }}</span>
+                  <span class="leg-city">{{ leg.to }}</span>
+                  <span class="leg-date">
+                    {{ formatLegDate(leg.arriveBy) }}
+                    <span v-if="legArrivesLater(leg)" class="leg-overnight" title="Arrives on a later day">+1</span>
+                  </span>
+                </div>
+              </div>
+
+              <div v-if="legAirline(index) || legBaggageChips(index).length || legBooking(index)" class="leg-chips">
+                <span v-if="legAirline(index)" class="leg-chip leg-chip--airline">
+                  <span class="leg-chip-label">Airline</span>
+                  <a
+                    v-if="legAirline(index).website"
+                    :href="legAirline(index).website"
+                    target="_blank"
+                    rel="noreferrer"
+                  >{{ legAirline(index).label }}</a>
+                  <span v-else>{{ legAirline(index).label }}</span>
+                </span>
+                <span
+                  v-for="chip in legBaggageChips(index)"
+                  :key="`${index}-${chip.label}`"
+                  class="leg-chip"
+                  :class="`leg-chip--${chip.state}`"
+                >
+                  <span class="leg-chip-label">{{ chip.label }}</span>
+                  <span class="leg-chip-text">{{ chip.text }}</span>
+                </span>
                 <a
-                  v-if="legAirline(index).website"
-                  :href="legAirline(index).website"
+                  v-if="legBooking(index)"
+                  class="booking-link"
+                  :href="legBooking(index).bookingUrl"
                   target="_blank"
                   rel="noreferrer"
+                  :title="legBooking(index).bookingNote"
                 >
-                  {{ legAirline(index).label }}
+                  {{ legBooking(index).bookingLabel }}
                 </a>
-                <span v-else>{{ legAirline(index).label }}</span>
-              </p>
-              <p v-if="legBaggage(index)" class="leg-baggage">Bags: {{ legBaggage(index) }}</p>
-              <a
-                v-if="legBooking(index)"
-                class="booking-link"
-                :href="legBooking(index).bookingUrl"
-                target="_blank"
-                rel="noreferrer"
-                :title="legBooking(index).bookingNote"
-              >
-                {{ legBooking(index).bookingLabel }}
-              </a>
-              <small>{{ leg.note }} Reliability {{ Math.round(leg.reliability * 100) }}%.</small>
+              </div>
+
+              <details v-if="legBaggage(index)" class="leg-details">
+                <summary>Baggage details</summary>
+                <p class="leg-baggage">Bags: {{ legBaggage(index) }}</p>
+                <small>{{ leg.note }} Reliability {{ Math.round(leg.reliability * 100) }}%.</small>
+              </details>
+              <small v-else class="leg-note">{{ leg.note }} Reliability {{ Math.round(leg.reliability * 100) }}%.</small>
             </div>
           </article>
           <div v-if="leg.stayHoursAfter" class="stay-separator">

@@ -24,12 +24,18 @@ test('prices the Porto route with date-flex transfer options', async ({ page }) 
   await expect(page.getByText('Pricing result')).toBeVisible({ timeout: 50_000 });
   await expect(page.getByLabel('Passengers')).toHaveValue('1');
   await expect(page.getByText('Optimized Porto to Dubai via Madrid on 2026-05-21 (+1d flex).')).toBeVisible();
-  await expect(page.getByText('Porto to Madrid')).toBeVisible();
-  await expect(page.getByText('Madrid to Dubai')).toBeVisible();
-  await expect(page.getByText('Dubai to Moscow')).toBeVisible();
-  await expect(page.getByText('2026-05-24 · flight')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Porto.*Madrid/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Madrid.*Dubai/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Dubai.*Moscow/ })).toBeVisible();
+  const dubaiToMoscow = page.locator('.leg-card', { has: page.getByRole('heading', { name: /Dubai.*Moscow/ }) });
+  await expect(dubaiToMoscow.locator('.leg-strip-end').first().locator('.leg-code')).toHaveText('DXB');
+  await expect(dubaiToMoscow.locator('.leg-strip-end').last().locator('.leg-code')).toHaveText('MOW');
+  await expect(dubaiToMoscow.locator('.leg-date').first()).toContainText('May 24');
   await expect(page.getByRole('link', { name: 'Ryanair (FR)' })).toHaveAttribute('href', 'https://www.ryanair.com/');
   await expect(page.getByRole('link', { name: 'Pegasus Airlines (PC)' })).toHaveAttribute('href', 'https://www.flypgs.com/');
+  for (const summary of await page.locator('.leg-details > summary').all()) {
+    await summary.click();
+  }
   await expect(page.getByText('Bags: Small cabin bag included; checked bag costs extra.')).toBeVisible();
   await expect(page.getByText('Bags: Cabin bag included; checked baggage depends on fare.')).toBeVisible();
   const transferSearchUrl = await page.getByRole('link', { name: 'Search transfer route' }).first().getAttribute('href');
