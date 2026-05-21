@@ -230,7 +230,7 @@ Updated `tests/e2e/porto-route.spec.js` to require visible Dubai stay-option but
 
 Whenever candidate options differ by a dimension that is not visible in the main route label, include that dimension in both the DOM key and the user-facing option text.
 
-## 2026-05-21: Partial Stay-Flex Options Did Not Complete On Selection
+## 2026-05-21: Stay-Flex Options Were Scored Against Unrelated Trip Legs
 
 ### Scenario
 
@@ -244,38 +244,34 @@ Route input included:
 
 ### Symptom
 
-Selecting the `+1d` Dubai stay option updated the itinerary to show the later `Dubai -> Moscow` flight, but the option still read `Partial trip · $259 transfer`. The visible route looked mostly priced, so the label did not explain what was missing.
+Selecting or comparing the `+1d` Dubai stay option showed `Partial trip · $259 transfer`, even though the useful local comparison was the next `Dubai -> Moscow` leg price. The partial state came from an unrelated missing return leg such as `Gdansk -> Porto`.
 
 ### Triggering Change
 
-Stay-flex options were exposed in the itinerary without a follow-up exact-route pricing step.
+Stay-flex options were exposed using the same whole-trip route option shape used for transfer ranking.
 
 ### Root Cause
 
-The initial route-option snapshot was built before return fallback recovery for that specific shifted itinerary. The selected `+1d` option moved the final `Gdansk -> Porto` date, so the fallback that completed the default-stay option could not be reused.
+The stay-option chip displayed full-trip completeness and transfer price. That coupled a local date choice after Dubai to later route recovery work, so unrelated missing legs hid the actual `Dubai -> Moscow` option value.
 
 ### User-Visible Impact
 
-- The user could see a cheaper downstream leg after selecting `+1d`, but could not compare the full route total.
-- “Partial trip” was technically correct but not actionable.
+- The user could see a cheaper downstream leg after selecting `+1d`, but the option label implied the stay choice itself was incomplete.
+- A missing Europe-to-Porto return price appeared to matter when the user was only deciding how long to stay in Dubai.
 
 ### Fix
 
-- Add `exactRouteOnly` pricing mode that quotes the selected itinerary and still runs missing Porto-return fallback, without starting another transfer search.
-- When the user selects a partial transfer or stay-flex option, request exact pricing for that option and replace the option snapshot with the completed quote when available.
-- Show a temporary `Completing trip...` label while the selected option is being expanded.
+- Keep stay-option chips local to the affected stay and next outbound leg.
+- Display the next leg price and route, for example `$323 Dubai -> Moscow`, instead of whole-trip completeness.
+- Leave full-trip partial/complete status in the top price summary where all legs are relevant.
 
 ### Regression Coverage
 
-Added `server/flight-prices.test.js` coverage:
-
-- `prices an exact selected route without running transfer optimization`
-
-The test proves an exact selected route can complete a missing Europe-to-Porto return through fallback without re-entering transfer optimization.
+Updated E2E coverage requires the stay option row to be visible. The next UI iteration should add a fixture assertion for next-leg prices once fixture data stabilizes.
 
 ### Future Guardrail
 
-Candidate cards can be partial during the broad search, but selecting one should either complete the exact route or show the specific remaining missing leg.
+Do not use whole-trip completeness to label a per-leg or per-stay decision. Segment option UI should answer the local travel choice first, and only the summary should describe whether the entire route is fully priced.
 
 ## 2026-05-21: Visit-Before Slack Was Not Used For Leading Transfer Price Search
 

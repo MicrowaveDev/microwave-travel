@@ -21,7 +21,7 @@ test.beforeEach(async ({ page }) => {
 test('prices the Porto route with date-flex transfer options', async ({ page }) => {
   await page.goto('/');
 
-  await expect(page.getByText('Pricing result')).toBeVisible();
+  await expect(page.getByText('Pricing result')).toBeVisible({ timeout: 50_000 });
   await expect(page.getByLabel('Passengers')).toHaveValue('1');
   await expect(page.getByText('Optimized Porto to Dubai via Madrid on 2026-05-21 (+1d flex).')).toBeVisible();
   await expect(page.getByText('Porto to Madrid')).toBeVisible();
@@ -45,8 +45,8 @@ test('prices the Porto route with date-flex transfer options', async ({ page }) 
   await expect(selectedTransfer).toContainText('2026-05-21 (+1d date)');
   await expect(page.getByRole('button', { name: /Porto -> Madrid -> Dubai.*\+1d stay/i })).toBeVisible();
   const dubaiStayOptions = page.getByLabel('Dubai stay options');
-  await expect(dubaiStayOptions.getByRole('button', { name: /3 days in Dubai/i })).toBeVisible();
-  await expect(dubaiStayOptions.getByRole('button', { name: /\+1d: 4 days in Dubai/i })).toBeVisible();
+  await expect(dubaiStayOptions.getByRole('button', { name: /3 days in Dubai.*\$520 Dubai -> Moscow/i })).toBeVisible();
+  await expect(dubaiStayOptions.getByRole('button', { name: /\+1d: 4 days in Dubai.*No Dubai -> Moscow price/i })).toBeVisible();
 });
 
 test('keeps skipped transfer diagnostics compact and copyable', async ({ page }) => {

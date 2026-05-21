@@ -90,7 +90,6 @@ export async function quoteFlightPrices(input, options = {}) {
   const passengers = normalizePassengerCount(input.passengers);
   const legs = normalizeLegs(input.legs, passengers);
   const requirements = normalizePriceRequirements(input.requirements);
-  const exactRouteOnly = Boolean(input.exactRouteOnly);
   if (legs.length === 0) {
     throw new Error('Optimize a route before fetching prices.');
   }
@@ -98,7 +97,7 @@ export async function quoteFlightPrices(input, options = {}) {
   emitProgress(onProgress, 'pricing-start', `Pricing ${legs.length} flight leg${legs.length === 1 ? '' : 's'} in USD.`, {
     legCount: legs.length
   });
-  const routeCacheKey = routeAnalysisCacheKey({ legs, requirements, passengers, exactRouteOnly });
+  const routeCacheKey = routeAnalysisCacheKey({ legs, requirements, passengers });
   const cachedRouteQuote = getCachedRouteAnalysis(routeCacheKey);
   if (cachedRouteQuote) {
     const quote = markQuoteFromCache(cachedRouteQuote, 'route-analysis');
@@ -126,9 +125,7 @@ export async function quoteFlightPrices(input, options = {}) {
     bundleCacheKey: legBundleCacheKey('current', legs, { stopOnUnpriced: false })
   });
   const quote = normalizeQuote('mixed', quoted.legs, quoted.attempts);
-  const optimized = exactRouteOnly
-    ? null
-    : await optimizePopularTransferRoute(input.legs, quote, { onProgress, providerState, requirements });
+  const optimized = await optimizePopularTransferRoute(input.legs, quote, { onProgress, providerState, requirements });
   const recovered = await recoverMissingPortoReturnLeg(
     optimized || quote,
     optimized?.optimizedRouteLegs || input.legs,
@@ -1210,13 +1207,12 @@ function markQuoteBundleFromCache(bundle) {
   return cachedBundle;
 }
 
-function routeAnalysisCacheKey({ legs, requirements, passengers, exactRouteOnly = false }) {
+function routeAnalysisCacheKey({ legs, requirements, passengers }) {
   return stableCacheKey('route-analysis', {
-    version: 3,
+    version: 4,
     legs: legs.map(cacheableLeg),
     requirements,
     passengers,
-    exactRouteOnly,
     config: priceCacheConfig()
   });
 }

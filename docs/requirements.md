@@ -104,6 +104,7 @@ Expected behavior:
 - Candidate routes must have every leg priced before they can replace the displayed route.
 - Candidate buttons must show the transfer-segment price, not necessarily the whole-trip price.
 - Candidate options should be sorted by transfer-segment price.
+- Transfer and stay/date alternatives are local segment decisions. Do not hide or label a Dubai -> Moscow stay/date option as incomplete because an unrelated later leg such as Gdansk -> Porto is missing.
 - Skipped candidates should be available as compact diagnostics, not displayed as selectable route options.
 
 ### Route Intelligence
@@ -128,7 +129,8 @@ Expected behavior:
 - Shifted options should show their date offset, for example `2026-05-22 (+2d)`.
 - The algorithm may choose a shifted date when the original date has no price or when the shifted date is materially cheaper.
 - For transfer replacements into a stop with a following outbound leg, also compare a small configurable extra-stay window, currently `POPULAR_ROUTE_STAY_FLEX_DAYS`, so options like staying one more day in Dubai can surface cheaper downstream fares.
-- Extra-stay options must be explicit in route options and logs; they must not silently change the user's requested stay.
+- Extra-stay options must be explicit in route options, stay-option UI, and logs; they must not silently change the user's requested stay.
+- Extra-stay option labels should show the affected next outbound leg price/date when known, not the full-trip total.
 
 ### Return-Leg Recovery
 

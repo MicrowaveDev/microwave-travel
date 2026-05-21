@@ -831,61 +831,6 @@ describe('flight price providers', () => {
     ));
     assert.ok(events.some((event) => event.step === 'fallback-complete'));
   });
-
-  it('prices an exact selected route without running transfer optimization', async () => {
-    clearFlightPriceCache();
-    const originalSerpApiKey = process.env.SERPAPI_KEY;
-    const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
-    const originalYandexKey = process.env.YANDEX_RASP_API_KEY;
-    const originalFetch = globalThis.fetch;
-    delete process.env.SERPAPI_KEY;
-    process.env.TRAVELPAYOUTS_TOKEN = 'test-aviasales-token';
-    delete process.env.YANDEX_RASP_API_KEY;
-
-    const routePrices = new Map([
-      ['OPO-DXB', 500],
-      ['GDN-WAW', 40],
-      ['WAW-OPO', 90]
-    ]);
-    const events = [];
-    globalThis.fetch = async (url) => {
-      const params = new URL(url).searchParams;
-      const route = `${params.get('origin')}-${params.get('destination')}`;
-      const price = routePrices.get(route);
-      return Response.json({
-        success: true,
-        data: price ? [{ price, currency: 'usd', airline: 'Test Air', search_id: `search-${route}` }] : []
-      });
-    };
-
-    const quote = await quoteFlightPrices(
-      {
-        exactRouteOnly: true,
-        legs: [
-          { from: 'Porto', to: 'Dubai', departOn: '2026-05-20', arriveBy: '2026-05-20', mode: 'flight' },
-          { from: 'Gdansk', to: 'Porto', departOn: '2026-06-13', mode: 'flight' }
-        ]
-      },
-      { onProgress: (event) => events.push(event) }
-    );
-
-    globalThis.fetch = originalFetch;
-    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
-    restoreEnv('TRAVELPAYOUTS_TOKEN', originalTravelpayoutsToken);
-    restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
-    clearFlightPriceCache();
-
-    assert.equal(quote.totalAmount, 630);
-    assert.equal(quote.optimization, undefined);
-    assert.deepEqual(quote.fallback.selectedRoute, ['Gdansk', 'Warsaw', 'Porto']);
-    assert.deepEqual(quote.optimizedRouteLegs.map((leg) => `${leg.from}-${leg.to}`), [
-      'Porto-Dubai',
-      'Gdansk-Warsaw',
-      'Warsaw-Porto'
-    ]);
-    assert.ok(!events.some((event) => event.step === 'compare-start'));
-    assert.ok(events.some((event) => event.step === 'fallback-complete'));
-  });
 });
 
 function restoreEnv(name, value) {
