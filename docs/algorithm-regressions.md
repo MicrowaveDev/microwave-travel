@@ -230,6 +230,53 @@ Updated `tests/e2e/porto-route.spec.js` to require visible Dubai stay-option but
 
 Whenever candidate options differ by a dimension that is not visible in the main route label, include that dimension in both the DOM key and the user-facing option text.
 
+## 2026-05-21: Partial Stay-Flex Options Did Not Complete On Selection
+
+### Scenario
+
+Route input included:
+
+- Origin/return: Porto.
+- Stops: Dubai 1 day, Moscow 3 days, Saint Petersburg 7 days, Kaliningrad 7 days.
+- Dubai visit-before date: 2026-05-29.
+- Trip start: 2026-05-20.
+- Locked stop order.
+
+### Symptom
+
+Selecting the `+1d` Dubai stay option updated the itinerary to show the later `Dubai -> Moscow` flight, but the option still read `Partial trip · $259 transfer`. The visible route looked mostly priced, so the label did not explain what was missing.
+
+### Triggering Change
+
+Stay-flex options were exposed in the itinerary without a follow-up exact-route pricing step.
+
+### Root Cause
+
+The initial route-option snapshot was built before return fallback recovery for that specific shifted itinerary. The selected `+1d` option moved the final `Gdansk -> Porto` date, so the fallback that completed the default-stay option could not be reused.
+
+### User-Visible Impact
+
+- The user could see a cheaper downstream leg after selecting `+1d`, but could not compare the full route total.
+- “Partial trip” was technically correct but not actionable.
+
+### Fix
+
+- Add `exactRouteOnly` pricing mode that quotes the selected itinerary and still runs missing Porto-return fallback, without starting another transfer search.
+- When the user selects a partial transfer or stay-flex option, request exact pricing for that option and replace the option snapshot with the completed quote when available.
+- Show a temporary `Completing trip...` label while the selected option is being expanded.
+
+### Regression Coverage
+
+Added `server/flight-prices.test.js` coverage:
+
+- `prices an exact selected route without running transfer optimization`
+
+The test proves an exact selected route can complete a missing Europe-to-Porto return through fallback without re-entering transfer optimization.
+
+### Future Guardrail
+
+Candidate cards can be partial during the broad search, but selecting one should either complete the exact route or show the specific remaining missing leg.
+
 ## 2026-05-21: Visit-Before Slack Was Not Used For Leading Transfer Price Search
 
 ### Scenario

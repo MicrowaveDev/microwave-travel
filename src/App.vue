@@ -40,6 +40,8 @@ const inputChangeLog = ref([]);
 const copyLogStatus = ref('');
 const logsCollapsed = ref(false);
 const selectedTransferOptionIndex = ref(0);
+const expandingTransferOptionKey = ref('');
+const expandedTransferOptionQuotes = ref(new Map());
 let optimizeDebounce = null;
 let priceRequestId = 0;
 let pricingAbortController = null;
@@ -347,6 +349,8 @@ function scheduleOptimize() {
   clearTimeout(optimizeDebounce);
   priceQuote.value = null;
   priceProgress.value = [];
+  expandedTransferOptionQuotes.value = new Map();
+  expandingTransferOptionKey.value = '';
   copyLogStatus.value = '';
   logsCollapsed.value = false;
   optimizeDebounce = setTimeout(() => {
@@ -490,9 +494,11 @@ function providerAttemptLabel(attempt) {
 }
 
 function selectTransferOption(index) {
-  if (!transferRouteOptions.value[index]) return;
+  const option = transferRouteOptions.value[index];
+  if (!option) return;
   selectedTransferOptionIndex.value = index;
   applyTransferOption(index);
+  expandPartialTransferOption(option, index);
 }
 
 function applyTransferOption(index, basePlan = plan.value) {
@@ -528,6 +534,9 @@ function transferOptionLabel(option) {
 }
 
 function transferOptionAmount(option) {
+  if (expandingTransferOptionKey.value === transferOptionKey(option)) return 'Completing...';
+  const expandedQuote = expandedTransferOptionQuotes.value.get(transferOptionKey(option));
+  if (Number.isFinite(expandedQuote?.totalAmount)) return `$${expandedQuote.totalAmount.toLocaleString()}`;
   return typeof option.amount === 'number' ? `$${option.amount.toLocaleString()}` : 'Partial';
 }
 
@@ -577,6 +586,9 @@ function stayFlexOptionLabel(option, leg) {
 }
 
 function stayFlexOptionAmount(option) {
+  if (expandingTransferOptionKey.value === transferOptionKey(option)) return 'Completing trip...';
+  const expandedQuote = expandedTransferOptionQuotes.value.get(transferOptionKey(option));
+  if (Number.isFinite(expandedQuote?.totalAmount)) return `$${expandedQuote.totalAmount.toLocaleString()} trip`;
   if (Number.isFinite(option.totalAmount)) return `$${option.totalAmount.toLocaleString()} trip`;
   if (Number.isFinite(option.amount)) return `Partial trip · $${option.amount.toLocaleString()} transfer`;
   return 'Partial trip';
@@ -585,6 +597,51 @@ function stayFlexOptionAmount(option) {
 function selectStayFlexOption(option) {
   const index = transferRouteOptions.value.findIndex((candidate) => transferOptionKey(candidate) === transferOptionKey(option));
   if (index >= 0) selectTransferOption(index);
+}
+
+async function expandPartialTransferOption(option, index) {
+  const key = transferOptionKey(option);
+  if (Number.isFinite(option.totalAmount) || expandedTransferOptionQuotes.value.has(key) || expandingTransferOptionKey.value === key) return;
+  expandingTransferOptionKey.value = key;
+  try {
+    const response = await fetch('/api/prices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        legs: option.routeLegs,
+        requirements: plan.value?.requirements || buildRequirements(),
+        passengers: normalizePassengerCountInput(passengers.value),
+        exactRouteOnly: true
+      })
+    });
+    if (!response.ok) throw new Error('Could not complete this route option.');
+    const quote = await response.json();
+    const expandedOption = {
+      ...option,
+      totalAmount: quote.totalAmount,
+      pricedLegCount: quote.pricedLegCount,
+      legCount: quote.legCount,
+      routeLegs: quote.optimizedRouteLegs || option.routeLegs,
+      legs: quote.legs || option.legs || []
+    };
+    const nextOptions = transferRouteOptions.value.slice();
+    nextOptions[index] = expandedOption;
+    priceQuote.value = {
+      ...priceQuote.value,
+      optimizedRouteOptions: nextOptions
+    };
+    expandedTransferOptionQuotes.value = new Map(expandedTransferOptionQuotes.value).set(key, quote);
+    if (selectedTransferOptionIndex.value === index) applyTransferOption(index);
+  } catch (caught) {
+    appendPriceProgress({
+      step: 'option-expand-failed',
+      message: caught.message || 'Could not complete this route option.',
+      at: new Date().toISOString(),
+      details: { route: option.route, departureDate: option.departureDate, stayFlexDays: option.stayFlexDays || 0 }
+    });
+  } finally {
+    if (expandingTransferOptionKey.value === key) expandingTransferOptionKey.value = '';
+  }
 }
 
 async function copyPricingLog() {
