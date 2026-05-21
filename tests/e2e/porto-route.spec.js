@@ -40,9 +40,10 @@ test('prices the Porto route with date-flex transfer options', async ({ page }) 
   await expect(page.getByText('Stay 3 days in Dubai')).toBeVisible();
   await expect(page.locator('.summary-strip > div', { hasText: 'Price' }).getByText('$1,127', { exact: true })).toBeVisible();
 
-  const selectedTransfer = page.getByRole('button', { name: /Porto -> Madrid -> Dubai/i });
+  const selectedTransfer = page.getByRole('button', { name: /Porto -> Madrid -> Dubai.*\(\+1d date\)$/i });
   await expect(selectedTransfer).toContainText('$277');
-  await expect(selectedTransfer).toContainText('2026-05-21 (+1d)');
+  await expect(selectedTransfer).toContainText('2026-05-21 (+1d date)');
+  await expect(page.getByRole('button', { name: /Porto -> Madrid -> Dubai.*\+1d stay/i })).toBeVisible();
 });
 
 test('keeps skipped transfer diagnostics compact and copyable', async ({ page }) => {

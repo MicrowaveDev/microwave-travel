@@ -95,6 +95,54 @@ When adding any new city that belongs to a special routing category, update the 
 
 Avoid hardcoded single-city checks for category rules. Prefer named sets or tables that make future additions visible.
 
+## 2026-05-21: Extra Stay Days Were Not Compared After A Transfer Replacement
+
+### Scenario
+
+Route input included:
+
+- Origin/return: Porto.
+- Stops: Dubai 1 day, Moscow 3 days, Saint Petersburg 7 days, Kaliningrad 7 days.
+- Dubai visit-before date: 2026-05-29.
+- Trip start: 2026-05-20.
+- Locked stop order.
+
+### Symptom
+
+Pricing selected a Porto to Dubai transfer arriving on 2026-05-26, then kept the requested one-day Dubai stay and priced `Dubai -> Moscow` on 2026-05-27. The UI did not show an option to stay one extra day in Dubai and depart to Moscow on 2026-05-28, even though that can materially change the downstream fare.
+
+### Triggering Change
+
+Date-flex search shifted the transfer and the rest of the itinerary as a block. It preserved the requested stay duration but did not create explicit extra-stay variants.
+
+### Root Cause
+
+`quoteShiftedTailForDateOffset()` was called only with the transfer date offset. The tail was never re-priced with `offsetDays + extraStayDays`, so downstream fares one day later were invisible to the optimizer and to transfer option buttons.
+
+### User-Visible Impact
+
+- The displayed route looked like the best valid route, but a nearby downstream departure date was not considered.
+- The user could not compare the cost of staying one more day in Dubai.
+
+### Fix
+
+- Add a configurable `POPULAR_ROUTE_STAY_FLEX_DAYS` window, defaulting to 1.
+- For each fully priced transfer candidate, quote downstream tail legs with both the preserved stay and the extra-stay variants.
+- Keep extra-stay changes explicit in progress messages, route options, and copied logs.
+- Rank comparable options by full-trip total when available, with transfer price as the fallback comparison.
+
+### Regression Coverage
+
+Added `server/flight-prices.test.js` coverage:
+
+- `compares adding one extra destination stay day when downstream fares are cheaper`
+
+The test proves a `+1d stay` option can beat the same transfer with the originally requested stay when `Dubai -> Moscow` is cheaper one day later.
+
+### Future Guardrail
+
+When a pricing optimization changes an upstream arrival date, evaluate whether the next outbound leg should have explicit stay-flex variants. Do not silently mutate stay duration; show the extra stay in options and logs.
+
 ## 2026-05-21: Visit-Before Slack Was Not Used For Leading Transfer Price Search
 
 ### Scenario

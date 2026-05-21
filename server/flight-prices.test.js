@@ -639,6 +639,68 @@ describe('flight price providers', () => {
     ));
   });
 
+  it('compares adding one extra destination stay day when downstream fares are cheaper', async () => {
+    clearFlightPriceCache();
+    const originalSerpApiKey = process.env.SERPAPI_KEY;
+    const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
+    const originalYandexKey = process.env.YANDEX_RASP_API_KEY;
+    const originalFetch = globalThis.fetch;
+    process.env.SERPAPI_KEY = 'test-serpapi-key';
+    delete process.env.TRAVELPAYOUTS_TOKEN;
+    delete process.env.YANDEX_RASP_API_KEY;
+
+    const routePrices = new Map([
+      ['OPO-MAD-2026-05-20', 20],
+      ['MAD-DXB-2026-05-20', 200],
+      ['DXB-MOW-2026-05-21', 500],
+      ['DXB-MOW-2026-05-22', 100]
+    ]);
+    const events = [];
+    globalThis.fetch = async (url) => {
+      const params = new URL(url).searchParams;
+      const route = [
+        params.get('departure_id'),
+        params.get('arrival_id'),
+        params.get('outbound_date')
+      ].join('-');
+      const price = routePrices.get(route);
+      return Response.json({
+        best_flights: price ? [{ price, flights: [{ airline: 'Test Air' }] }] : [],
+        search_metadata: { id: `search-${route}` }
+      });
+    };
+
+    const quote = await quoteFlightPrices(
+      {
+        requirements: [{ city: 'Dubai', type: 'before', date: '2026-05-29' }],
+        legs: [
+          { from: 'Porto', to: 'Dubai', departOn: '2026-05-20', arriveBy: '2026-05-20', mode: 'flight', stayHoursAfter: 24, stayDaysAfter: 1 },
+          { from: 'Dubai', to: 'Moscow', departOn: '2026-05-21', mode: 'flight' }
+        ]
+      },
+      { onProgress: (event) => events.push(event) }
+    );
+
+    globalThis.fetch = originalFetch;
+    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
+    restoreEnv('TRAVELPAYOUTS_TOKEN', originalTravelpayoutsToken);
+    restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
+    clearFlightPriceCache();
+
+    assert.equal(quote.totalAmount, 320);
+    assert.equal(quote.optimization.stayFlexDays, 1);
+    assert.equal(quote.optimizedRouteLegs[1].to, 'Dubai');
+    assert.equal(quote.optimizedRouteLegs[1].stayDaysAfter, 2);
+    assert.equal(quote.optimizedRouteLegs[2].from, 'Dubai');
+    assert.equal(quote.optimizedRouteLegs[2].departOn, '2026-05-22');
+    assert.equal(quote.optimizedRouteOptions[0].stayFlexDays, 1);
+    assert.ok(events.some((event) =>
+      event.step === 'candidate-best' &&
+      event.details?.stayFlexDays === 1 &&
+      event.details?.previewOption?.totalAmount === 320
+    ));
+  });
+
   it('keeps skipped transfer candidates when no valid Porto to Dubai transfer is fully priced', async () => {
     clearFlightPriceCache();
     const originalSerpApiKey = process.env.SERPAPI_KEY;

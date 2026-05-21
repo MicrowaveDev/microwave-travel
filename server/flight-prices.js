@@ -67,6 +67,7 @@ const PORTO_DUBAI_TRANSFER_HUBS = [
 const PORTO_RETURN_FALLBACK_HUBS = ['Warsaw', 'Madrid', 'Lisbon', 'Barcelona', 'Paris', 'Amsterdam', 'Milan'];
 const POPULAR_ROUTE_SEARCH_DAYS = Number(process.env.POPULAR_ROUTE_SEARCH_DAYS || 4);
 const POPULAR_ROUTE_DATE_FLEX_DAYS = Number(process.env.POPULAR_ROUTE_DATE_FLEX_DAYS || 2);
+const POPULAR_ROUTE_STAY_FLEX_DAYS = Number(process.env.POPULAR_ROUTE_STAY_FLEX_DAYS || 1);
 const PRICE_COMPARE_PROGRESS_DETAIL = process.env.PRICE_COMPARE_PROGRESS_DETAIL || 'compact';
 const LEG_QUOTE_CACHE_TTL_MS = 60 * 60 * 1000;
 const AVIASALES_SEARCH_BASE_URL = process.env.AVIASALES_SEARCH_BASE_URL || 'https://search.aviasales.com/flights/';
@@ -274,52 +275,59 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
         continue;
       }
 
-      const tailQuote = await quoteShiftedTailForDateOffset(offsetDays, originalLegs.slice(endIndex), {
-        cache: tailQuoteCache,
-        onProgress,
-        providerState,
-        candidateRoute: candidateLabel,
-        progressDetail,
-        passengers
-      });
+      for (const stayFlexDays of stayFlexDayChoices(currentSuffix, originalLegs.slice(endIndex))) {
+        const tailQuote = await quoteShiftedTailForDateOffset(offsetDays + stayFlexDays, originalLegs.slice(endIndex), {
+          cache: tailQuoteCache,
+          onProgress,
+          providerState,
+          candidateRoute: candidateLabel,
+          progressDetail,
+          passengers
+        });
 
-      const candidate = {
-        route,
-        departureDate,
-        offsetDays,
-        displayLegs: candidateDisplayLegs,
-        quote: candidateQuote,
-        tailDisplayLegs: tailQuote.displayLegs,
-        tailQuoteLegs: tailQuote.quoteLegs,
-        tailAttempts: tailQuote.attempts
-      };
-      const previewOption = buildOptimizedRouteOption({
-        candidate,
-        currentSuffix,
-        prefixDisplayLegs: originalLegs.slice(0, startIndex),
-        tailDisplayLegs: candidate.tailDisplayLegs,
-        prefixQuoteLegs: initialQuote.legs.filter((quotedLeg) =>
-          originalLegs.slice(0, startIndex).some((displayLeg) => sameDisplayLeg(displayLeg, quotedLeg))
-        ),
-        tailQuoteLegs: candidate.tailQuoteLegs
-      });
-      comparableCandidates.push(candidate);
-      if (!best || candidateQuote.totalAmount < best.quote.totalAmount) {
-        best = candidate;
-        emitProgress(onProgress, 'candidate-best', `${candidateLabel} on ${departureDate}${formatDateShift(offsetDays)} is the current best at $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
+        const candidate = {
           route,
-          date: departureDate,
-          totalAmount: candidateQuote.totalAmount,
+          departureDate,
           offsetDays,
-          previewOption
+          stayFlexDays,
+          displayLegs: candidateDisplayLegs,
+          quote: candidateQuote,
+          tailDisplayLegs: tailQuote.displayLegs,
+          tailQuoteLegs: tailQuote.quoteLegs,
+          tailAttempts: tailQuote.attempts
+        };
+        const previewOption = buildOptimizedRouteOption({
+          candidate,
+          currentSuffix,
+          prefixDisplayLegs: originalLegs.slice(0, startIndex),
+          tailDisplayLegs: candidate.tailDisplayLegs,
+          prefixQuoteLegs: initialQuote.legs.filter((quotedLeg) =>
+            originalLegs.slice(0, startIndex).some((displayLeg) => sameDisplayLeg(displayLeg, quotedLeg))
+          ),
+          tailQuoteLegs: candidate.tailQuoteLegs
         });
-      } else {
-        emitProgress(onProgress, 'candidate-result', `${candidateLabel} on ${departureDate}${formatDateShift(offsetDays)}: $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
-          route,
-          date: departureDate,
-          totalAmount: candidateQuote.totalAmount,
-          offsetDays
-        });
+        comparableCandidates.push(candidate);
+        if (!best || compareCandidates(candidate, best) < 0) {
+          best = candidate;
+          emitProgress(onProgress, 'candidate-best', `${candidateLabel} on ${departureDate}${formatDateShift(offsetDays)}${formatStayFlex(stayFlexDays, direction.to)} is the current best at ${formatCandidatePrice(previewOption)}.`, {
+            route,
+            date: departureDate,
+            totalAmount: previewOption.totalAmount,
+            transferAmount: candidateQuote.totalAmount,
+            offsetDays,
+            stayFlexDays,
+            previewOption
+          });
+        } else {
+          emitProgress(onProgress, 'candidate-result', `${candidateLabel} on ${departureDate}${formatDateShift(offsetDays)}${formatStayFlex(stayFlexDays, direction.to)}: ${formatCandidatePrice(previewOption)}.`, {
+            route,
+            date: departureDate,
+            totalAmount: previewOption.totalAmount,
+            transferAmount: candidateQuote.totalAmount,
+            offsetDays,
+            stayFlexDays
+          });
+        }
       }
     }
   }
@@ -332,7 +340,7 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   }
 
   const rankedCandidates = [...comparableCandidates]
-    .sort((left, right) => left.quote.totalAmount - right.quote.totalAmount)
+    .sort(compareCandidates)
     .map((candidate) => buildOptimizedRouteOption({
       candidate,
       currentSuffix,
@@ -343,8 +351,9 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
       ),
       tailQuoteLegs: candidate.tailQuoteLegs
     }));
+  const bestOptimizedOption = rankedCandidates[0] || null;
 
-  if (!best || (Number.isFinite(currentSuffixQuote) && best.quote.totalAmount >= currentSuffixQuote)) {
+  if (!best || !beatsCurrentRoute(bestOptimizedOption, best, initialQuote.totalAmount, currentSuffixQuote)) {
     const message = best
       ? 'No cheaper transfer route beat the current route.'
       : 'No complete priced transfer route was available for the valid stay window.';
@@ -358,6 +367,7 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
     emitProgress(onProgress, 'compare-complete', message, {
       selectedRoute: null,
       currentAmount: currentSuffixQuote,
+      currentTotalAmount: initialQuote.totalAmount,
       bestAmount: best?.quote.totalAmount || null
     });
     return enrichedQuote;
@@ -377,7 +387,7 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   ]);
   combinedQuote.optimizedRouteLegs = [
     ...prefixDisplayLegs,
-    ...copyStayToReplacement(currentSuffix, best.displayLegs),
+    ...copyStayToReplacement(currentSuffix, best.displayLegs, best.stayFlexDays),
     ...tailDisplayLegs
   ];
   combinedQuote.optimizedRouteOptions = rankedCandidates;
@@ -389,16 +399,19 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
     selectedRoute: best.route,
     departureDate: best.departureDate,
     dateShiftDays: best.offsetDays,
+    stayFlexDays: best.stayFlexDays || 0,
     previousReturnAmount: currentSuffixQuote,
     selectedReturnAmount: best.quote.totalAmount
   };
   combinedQuote.message = `${combinedQuote.message} ${combinedQuote.transferSearchMessage}`;
-  emitProgress(onProgress, 'compare-complete', `Selected ${best.route.join(' -> ')} on ${best.departureDate}${formatDateShift(best.offsetDays)} at $${best.quote.totalAmount.toLocaleString()} USD.`, {
+  emitProgress(onProgress, 'compare-complete', `Selected ${best.route.join(' -> ')} on ${best.departureDate}${formatDateShift(best.offsetDays)}${formatStayFlex(best.stayFlexDays, direction.to)} at ${formatCandidatePrice(bestOptimizedOption)}.`, {
     selectedRoute: best.route,
     date: best.departureDate,
     offsetDays: best.offsetDays,
+    stayFlexDays: best.stayFlexDays || 0,
     previousAmount: currentSuffixQuote,
-    selectedAmount: best.quote.totalAmount
+    selectedAmount: best.quote.totalAmount,
+    selectedTotalAmount: bestOptimizedOption?.totalAmount || null
   });
   return combinedQuote;
 }
@@ -455,7 +468,7 @@ function buildOptimizedRouteOption({
 }) {
   const routeLegs = [
     ...prefixDisplayLegs,
-    ...copyStayToReplacement(currentSuffix, candidate.displayLegs),
+    ...copyStayToReplacement(currentSuffix, candidate.displayLegs, candidate.stayFlexDays),
     ...tailDisplayLegs
   ];
   const quoteLegs = [...prefixQuoteLegs, ...candidate.quote.legs, ...tailQuoteLegs];
@@ -464,6 +477,7 @@ function buildOptimizedRouteOption({
     route: candidate.route,
     departureDate: candidate.departureDate,
     dateShiftDays: candidate.offsetDays || 0,
+    stayFlexDays: candidate.stayFlexDays || 0,
     amount: candidate.quote.totalAmount,
     totalAmount: quote.totalAmount,
     pricedLegCount: quote.pricedLegCount,
@@ -471,6 +485,54 @@ function buildOptimizedRouteOption({
     routeLegs,
     legs: quoteLegs
   };
+}
+
+function compareCandidates(left, right) {
+  const leftOption = comparableAmount(left);
+  const rightOption = comparableAmount(right);
+  if (leftOption.complete !== rightOption.complete) return leftOption.complete ? -1 : 1;
+  const leftAmount = leftOption.complete ? leftOption.totalAmount : leftOption.transferAmount;
+  const rightAmount = rightOption.complete ? rightOption.totalAmount : rightOption.transferAmount;
+  if (leftAmount !== rightAmount) return leftAmount - rightAmount;
+  if ((left.stayFlexDays || 0) !== (right.stayFlexDays || 0)) return (left.stayFlexDays || 0) - (right.stayFlexDays || 0);
+  return left.quote.totalAmount - right.quote.totalAmount;
+}
+
+function beatsCurrentRoute(option, candidate, currentTotalAmount, currentSuffixAmount) {
+  if (Number.isFinite(option?.totalAmount) && Number.isFinite(currentTotalAmount)) {
+    return option.totalAmount < currentTotalAmount;
+  }
+  if (Number.isFinite(currentSuffixAmount)) {
+    return candidate.quote.totalAmount < currentSuffixAmount;
+  }
+  return true;
+}
+
+function comparableAmount(candidate) {
+  const quoteLegs = [...candidate.quote.legs, ...candidate.tailQuoteLegs];
+  const quote = normalizeQuote('mixed', quoteLegs, []);
+  return {
+    complete: Number.isFinite(quote.totalAmount),
+    totalAmount: quote.totalAmount,
+    transferAmount: candidate.quote.totalAmount
+  };
+}
+
+function stayFlexDayChoices(replacedLegs, tailLegs) {
+  const staySource = replacedLegs.at(-1);
+  if (!staySource?.stayHoursAfter || tailLegs.length === 0) return [0];
+  const maxStayFlexDays = Math.max(0, Math.floor(POPULAR_ROUTE_STAY_FLEX_DAYS));
+  return Array.from({ length: maxStayFlexDays + 1 }, (_, days) => days);
+}
+
+function formatStayFlex(stayFlexDays, city) {
+  return stayFlexDays ? `, +${stayFlexDays}d in ${city}` : '';
+}
+
+function formatCandidatePrice(option) {
+  if (Number.isFinite(option?.totalAmount)) return `$${option.totalAmount.toLocaleString()} USD total`;
+  if (Number.isFinite(option?.amount)) return `$${option.amount.toLocaleString()} USD transfer`;
+  return 'partial price';
 }
 
 function pruneDatesForTailStay(dates, replacedLegs, tailLegs) {
@@ -509,14 +571,16 @@ function pruneDatesForTailStay(dates, replacedLegs, tailLegs) {
   };
 }
 
-function copyStayToReplacement(replacedLegs, replacementLegs) {
+function copyStayToReplacement(replacedLegs, replacementLegs, stayFlexDays = 0) {
   const staySource = replacedLegs.at(-1);
   if (!staySource?.stayHoursAfter || replacementLegs.length === 0) return replacementLegs;
+  const extraStayDays = Number(stayFlexDays) || 0;
+  const extraStayHours = extraStayDays * 24;
   return replacementLegs.map((leg, index) => index === replacementLegs.length - 1
     ? {
         ...leg,
-        stayHoursAfter: staySource.stayHoursAfter,
-        stayDaysAfter: staySource.stayDaysAfter
+        stayHoursAfter: staySource.stayHoursAfter + extraStayHours,
+        stayDaysAfter: staySource.stayDaysAfter + extraStayDays
       }
     : leg
   );

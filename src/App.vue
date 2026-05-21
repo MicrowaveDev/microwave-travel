@@ -521,7 +521,12 @@ function transferOptionAmount(option) {
 
 function transferOptionDate(option) {
   const shift = Number(option.dateShiftDays) || 0;
-  return `${option.departureDate}${shift ? ` (${shift > 0 ? '+' : ''}${shift}d)` : ''}`;
+  const stayFlex = Number(option.stayFlexDays) || 0;
+  const flex = [
+    shift ? `${shift > 0 ? '+' : ''}${shift}d date` : null,
+    stayFlex ? `+${stayFlex}d stay` : null
+  ].filter(Boolean).join(', ');
+  return `${option.departureDate}${flex ? ` (${flex})` : ''}`;
 }
 
 function transferSkipReason(option) {
@@ -586,6 +591,8 @@ function buildPricingLog() {
           optimizedRouteOptions: (quote.optimizedRouteOptions || []).map((option) => ({
             route: option.route,
             departureDate: option.departureDate,
+            dateShiftDays: option.dateShiftDays || 0,
+            stayFlexDays: option.stayFlexDays || 0,
             amount: option.amount,
             totalAmount: option.totalAmount,
             pricedLegCount: option.pricedLegCount,

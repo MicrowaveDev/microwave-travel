@@ -127,6 +127,8 @@ Expected behavior:
 - Stay durations must remain intact after shifting dates.
 - Shifted options should show their date offset, for example `2026-05-22 (+2d)`.
 - The algorithm may choose a shifted date when the original date has no price or when the shifted date is materially cheaper.
+- For transfer replacements into a stop with a following outbound leg, also compare a small configurable extra-stay window, currently `POPULAR_ROUTE_STAY_FLEX_DAYS`, so options like staying one more day in Dubai can surface cheaper downstream fares.
+- Extra-stay options must be explicit in route options and logs; they must not silently change the user's requested stay.
 
 ### Return-Leg Recovery
 
@@ -174,6 +176,7 @@ Expected behavior:
 - `FLIGHT_PRICE_CACHE_DB`: Optional SQLite cache path.
 - `POPULAR_ROUTE_SEARCH_DAYS`: Search-day count for non-flex popular-route checks.
 - `POPULAR_ROUTE_DATE_FLEX_DAYS`: Date-flex radius for popular transfer pricing.
+- `POPULAR_ROUTE_STAY_FLEX_DAYS`: Extra destination stay days to compare after a transfer replacement. Defaults to 1.
 - `PRICE_ROUTE_INTELLIGENCE_LIMIT`: Number of ranked transfer routes that receive full date-flex live pricing. Lower-ranked routes still get primary-date checks.
 - `PRICE_COMPARE_PROGRESS_DETAIL`: Use `compact` by default; set to `verbose` to emit per-candidate comparison/provider/cache progress events.
 - `BAGGAGE_ALLOWANCE_DB`: Optional SQLite database path for curated baggage rules. Defaults to `data/baggage-allowances.sqlite`.
