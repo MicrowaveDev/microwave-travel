@@ -41,6 +41,7 @@ Expected behavior:
 - Preserve the requested 3 days in Dubai before the next outbound leg.
 - Use the Kaliningrad/Gdansk ground transfer where applicable.
 - If direct Porto to Dubai is unpriced or expensive, search popular transfer hubs.
+- Rank transfer hubs with route intelligence before making live provider calls.
 - Consider nearby departure dates within the configured date-flex window.
 - If selecting a shifted transfer date, shift downstream itinerary dates by the same offset so stay durations remain intact.
 - If Gdansk to Porto is unpriced, try configured Europe return hubs.
@@ -87,10 +88,22 @@ Expected behavior:
 
 - Search popular transfer alternatives for replaceable Porto/Dubai and Dubai/Porto segments.
 - Include the direct route as a candidate.
+- Rank transfer candidates using route intelligence before live pricing.
 - Candidate routes must have every leg priced before they can replace the displayed route.
 - Candidate buttons must show the transfer-segment price, not necessarily the whole-trip price.
 - Candidate options should be sorted by transfer-segment price.
 - Skipped candidates should be available as compact diagnostics, not displayed as selectable route options.
+
+### Route Intelligence
+
+- Maintain a lightweight built-in route intelligence table for common transfer legs.
+- Each route hint can include a typical USD price, an expense ratio, and common airline/carrier hints.
+- Use route intelligence only to order and limit live searches; provider-returned prices remain authoritative.
+- Search all transfer candidates on the primary departure date so an unexpected cheap route is not fully hidden.
+- Apply full date-flex pricing only to the highest-ranked candidates by default.
+- Lower-ranked candidates may skip extra date-flex days, but should be recorded in skipped diagnostics with a route-intelligence reason.
+- The route intelligence limit must be configurable with `PRICE_ROUTE_INTELLIGENCE_LIMIT`.
+- Route intelligence must have unit tests for estimation, ordering, and skipped low-priority route reporting.
 
 ### Date Flexibility
 
@@ -121,10 +134,12 @@ Expected behavior:
 - The user can copy a full price-search log.
 - Copied logs should include trip input, displayed route, price result, provider attempts, priced legs, optimized options, skipped options, and progress events.
 - Skipped transfer attempts should explain whether they were skipped for missing prices or date/stay constraints.
+- Live progress should default to compact comparison logs, not one event per internal candidate leg/provider/cache hit.
+- Verbose comparison progress should be available for debugging with `PRICE_COMPARE_PROGRESS_DETAIL=verbose`.
 
 ## Non-Functional Requirements
 
-- Avoid unnecessary API calls through caching, provider disabling, early pruning, and grouped diagnostics.
+- Avoid unnecessary API calls through caching, provider disabling, early pruning, route intelligence, compact progress, and grouped diagnostics.
 - Preserve enough diagnostics to understand why no route was selected.
 - Keep the UI dense and operational rather than marketing-style.
 - Do not hide partial results when pricing is incomplete.
@@ -139,6 +154,8 @@ Expected behavior:
 - `FLIGHT_PRICE_CACHE_DB`: Optional SQLite cache path.
 - `POPULAR_ROUTE_SEARCH_DAYS`: Search-day count for non-flex popular-route checks.
 - `POPULAR_ROUTE_DATE_FLEX_DAYS`: Date-flex radius for popular transfer pricing.
+- `PRICE_ROUTE_INTELLIGENCE_LIMIT`: Number of ranked transfer routes that receive full date-flex live pricing. Lower-ranked routes still get primary-date checks.
+- `PRICE_COMPARE_PROGRESS_DETAIL`: Use `compact` by default; set to `verbose` to emit per-candidate comparison/provider/cache progress events.
 
 ## Verification Requirements
 
@@ -148,6 +165,13 @@ Run before handoff:
 npm test
 npm run build
 npm run test:route:porto
+npm run test:e2e
+```
+
+Run the whole local regression bundle:
+
+```bash
+npm run test:all
 ```
 
 Use live providers only when needed:
@@ -161,6 +185,7 @@ Live mode spends provider requests and can vary with provider cache state.
 ## Known Limitations
 
 - The route optimizer uses a small built-in city and route dataset.
+- Route intelligence is a curated heuristic table, not a live fare prediction model.
 - Flight prices are provider estimates and may not match final checkout.
 - Aviasales may return no fare for a route/date even when flights exist.
 - Ground transfers, border rules, visas, sanctions, airspace restrictions, and baggage are not automatically validated.
@@ -172,5 +197,6 @@ Live mode spends provider requests and can vary with provider cache state.
 - Show a concise reason when date-flex shifts the itinerary.
 - Add hard latest/earliest constraints per stop, not only visit-before.
 - Consider provider batch endpoints when available.
+- Learn route intelligence hints from cached historical quotes instead of only static data.
 - Add route safety checks for border and airspace risk.
 - Add richer booking-link attribution and discount/referral metadata when a provider supplies it.

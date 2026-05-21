@@ -4,7 +4,7 @@ Simple Vue + Node.js travel planner for turning rough trip requirements into an 
 
 The current optimizer is an MVP: it uses a small built-in city/route heuristic dataset, supports repeated stops, checks deadline requirements such as `Dubai before 1 June`, and prices flight legs through configured providers when possible.
 
-See [docs/requirements.md](docs/requirements.md) for the product requirements, pricing behavior, provider fallback rules, date-flex transfer search, and verification expectations.
+See [docs/requirements.md](docs/requirements.md) for the product requirements, pricing behavior, provider fallback rules, route intelligence, date-flex transfer search, and verification expectations.
 
 ## Run
 
@@ -38,11 +38,14 @@ Priced flight legs include prefilled Aviasales search links. When `TRAVELPAYOUTS
 
 Popular Porto/Dubai transfer searches include a small date-flex window. Set `POPULAR_ROUTE_DATE_FLEX_DAYS` to control how many days around the original departure should be considered. When a shifted date wins, the downstream itinerary shifts by the same number of days so stop stays remain intact.
 
+Transfer search is ordered by a small built-in route intelligence table in `server/route-intelligence.js`. It stores typical route prices, expense ratios, and common carrier hints so likely-cheaper transfer routes are searched first. The app still checks every transfer route on the primary date, but low-priority expensive routes skip extra date-flex calls by default. Set `PRICE_ROUTE_INTELLIGENCE_LIMIT` to control how many ranked routes receive full date-flex pricing. Set `PRICE_COMPARE_PROGRESS_DETAIL=verbose` to restore detailed per-candidate provider progress logs for debugging; the default compact mode keeps copied logs small.
+
 ## Verify
 
 ```bash
 npm test
 npm run build
+npm run test:e2e
 ```
 
 Run the Porto -> Dubai -> Moscow -> Kaliningrad pricing scenario used for regression checks:
@@ -52,3 +55,9 @@ npm run test:route:porto
 ```
 
 By default this uses mocked provider responses so it does not spend API quota. Add `-- --live` to use configured live providers, or `-- --json` to print the full plan, quote, and progress events.
+
+For the full local regression pass, including API tests, build, the Porto route fixture, and Playwright UI checks:
+
+```bash
+npm run test:all
+```
