@@ -254,14 +254,15 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
     }));
 
   if (!best || (Number.isFinite(currentSuffixQuote) && best.quote.totalAmount >= currentSuffixQuote)) {
-    const enrichedQuote = {
-      ...initialQuote,
-      optimizedRouteOptions: rankedCandidates,
-      optimizedRouteSkippedOptions: skippedCandidates
-    };
     const message = best
       ? 'No cheaper transfer route beat the current route.'
       : 'No complete priced transfer route was available for the valid stay window.';
+    const enrichedQuote = {
+      ...initialQuote,
+      transferSearchMessage: message,
+      optimizedRouteOptions: rankedCandidates,
+      optimizedRouteSkippedOptions: skippedCandidates
+    };
     enrichedQuote.message = `${initialQuote.message} ${message}`;
     emitProgress(onProgress, 'compare-complete', message, {
       selectedRoute: null,
@@ -291,6 +292,7 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   ];
   combinedQuote.optimizedRouteOptions = rankedCandidates;
   combinedQuote.optimizedRouteSkippedOptions = skippedCandidates;
+  combinedQuote.transferSearchMessage = `Optimized ${direction.from} to ${direction.to} via ${best.route.slice(1, -1).join(' / ') || 'direct'} on ${best.departureDate}.`;
   combinedQuote.optimization = {
     reason: `Found a cheaper priced ${direction.from} to ${direction.to} option.`,
     replacedRoute: currentSuffix.map((leg) => leg.from).concat(currentSuffix.at(-1).to),
@@ -299,7 +301,7 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
     previousReturnAmount: currentSuffixQuote,
     selectedReturnAmount: best.quote.totalAmount
   };
-  combinedQuote.message = `${combinedQuote.message} Optimized ${direction.from} to ${direction.to} via ${best.route.slice(1, -1).join(' / ') || 'direct'} on ${best.departureDate}.`;
+  combinedQuote.message = `${combinedQuote.message} ${combinedQuote.transferSearchMessage}`;
   emitProgress(onProgress, 'compare-complete', `Selected ${best.route.join(' -> ')} on ${best.departureDate} at $${best.quote.totalAmount.toLocaleString()} USD.`, {
     selectedRoute: best.route,
     date: best.departureDate,
@@ -489,6 +491,7 @@ async function recoverMissingPortoReturnLeg(quote, displayLegs, options = {}) {
     combinedQuote.optimizedRouteSkippedOptions = quote.optimizedRouteSkippedOptions;
   }
   if (quote.optimization) combinedQuote.optimization = quote.optimization;
+  if (quote.transferSearchMessage) combinedQuote.transferSearchMessage = quote.transferSearchMessage;
   combinedQuote.fallback = {
     reason: `Found a priced fallback for ${missingLeg.from} to Porto.`,
     replacedRoute: [missingLeg.from, 'Porto'],
@@ -496,7 +499,11 @@ async function recoverMissingPortoReturnLeg(quote, displayLegs, options = {}) {
     departureDate: missingLeg.departureDate,
     selectedAmount: best.quote.totalAmount
   };
-  combinedQuote.message = `${quote.message} Replaced missing ${missingLeg.from} to Porto price via ${best.route.slice(1, -1).join(' / ')}.`;
+  combinedQuote.message = [
+    combinedQuote.message,
+    quote.transferSearchMessage,
+    `Replaced missing ${missingLeg.from} to Porto price via ${best.route.slice(1, -1).join(' / ')}.`
+  ].filter(Boolean).join(' ');
   emitProgress(onProgress, 'fallback-complete', `Selected fallback ${best.route.join(' -> ')} at $${best.quote.totalAmount.toLocaleString()} USD.`, {
     selectedRoute: best.route,
     date: missingLeg.departureDate,

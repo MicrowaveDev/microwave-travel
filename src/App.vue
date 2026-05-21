@@ -753,7 +753,7 @@ optimize();
         <p v-for="warning in plan.warnings" :key="warning">{{ warning }}</p>
       </div>
 
-      <div v-if="transferRouteOptions.length || transferSkippedOptions.length" class="transfer-options" aria-label="Transfer route options">
+      <div v-if="transferRouteOptions.length" class="transfer-options" aria-label="Transfer route options">
         <button
           v-for="(option, index) in transferRouteOptions"
           :key="`${option.route.join('-')}-${option.departureDate}`"
@@ -765,19 +765,20 @@ optimize();
           <strong>{{ transferOptionAmount(option) }}</strong>
           <small>Transfer · {{ option.departureDate }}</small>
         </button>
-        <button
-          v-for="option in transferSkippedOptions"
-          :key="`skipped-${option.route.join('-')}-${option.departureDate}-${option.reason}`"
-          class="skipped"
-          type="button"
-          disabled
-          :title="transferSkipReason(option)"
-        >
-          <span>{{ transferOptionLabel(option) }}</span>
-          <strong>Skipped</strong>
-          <small>{{ transferSkipReason(option) }}</small>
-        </button>
       </div>
+      <details v-if="transferSkippedOptions.length" class="transfer-skipped-details">
+        <summary>Skipped transfer searches ({{ transferSkippedOptions.length }})</summary>
+        <ul>
+          <li
+            v-for="option in transferSkippedOptions"
+            :key="`skipped-${option.route.join('-')}-${option.departureDate}-${option.reason}`"
+          >
+            <strong>{{ transferOptionLabel(option) }}</strong>
+            <span>{{ option.departureDate }}</span>
+            <p>{{ transferSkipReason(option) }}</p>
+          </li>
+        </ul>
+      </details>
 
       <div v-if="plan" class="legs">
         <template v-for="(leg, index) in plan.legs" :key="`${leg.from}-${leg.to}-${index}`">
