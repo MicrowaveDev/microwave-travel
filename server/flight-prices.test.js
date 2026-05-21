@@ -343,6 +343,46 @@ describe('flight price providers', () => {
     assert.ok(events.some((event) => event.step === 'provider-skipped' && event.details.provider === 'serpapi'));
   });
 
+  it('persists provider quota disables across repeated route analyses', async () => {
+    clearFlightPriceCache();
+    const originalSerpApiKey = process.env.SERPAPI_KEY;
+    const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
+    const originalYandexKey = process.env.YANDEX_RASP_API_KEY;
+    const originalFetch = globalThis.fetch;
+    process.env.SERPAPI_KEY = 'quota-serpapi-key';
+    process.env.TRAVELPAYOUTS_TOKEN = 'test-aviasales-token';
+    delete process.env.YANDEX_RASP_API_KEY;
+    let serpApiCalls = 0;
+    let aviasalesCalls = 0;
+    globalThis.fetch = async (url) => {
+      if (String(url).includes('serpapi.com')) {
+        serpApiCalls += 1;
+        return Response.json({ error: 'Your account has run out of searches.' }, { status: 429 });
+      }
+      aviasalesCalls += 1;
+      return Response.json({
+        success: true,
+        data: [{ price: 222, currency: 'usd', airline: 'TP', search_id: `aviasales-${aviasalesCalls}` }]
+      });
+    };
+
+    await quoteFlightPrices({ legs: [{ from: 'Porto', to: 'Lisbon', departOn: '2026-05-20', mode: 'flight' }] });
+    closeFlightPriceCacheDb();
+    const second = await quoteFlightPrices({ legs: [{ from: 'Porto', to: 'Madrid', departOn: '2026-05-20', mode: 'flight' }] });
+
+    globalThis.fetch = originalFetch;
+    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
+    restoreEnv('TRAVELPAYOUTS_TOKEN', originalTravelpayoutsToken);
+    restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
+    clearFlightPriceCache();
+
+    assert.equal(serpApiCalls, 1);
+    assert.equal(aviasalesCalls, 2);
+    assert.equal(second.attempts[0].provider, 'serpapi');
+    assert.equal(second.attempts[0].skipped, true);
+    assert.equal(second.legs[0].amount, 222);
+  });
+
   it('compares popular Dubai to Porto transfer routes including Doha', async () => {
     clearFlightPriceCache();
     const originalSerpApiKey = process.env.SERPAPI_KEY;

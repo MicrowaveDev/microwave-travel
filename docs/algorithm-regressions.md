@@ -11,6 +11,47 @@ This document records route-optimization and pricing-search regressions that app
 - Each entry should include the affected scenario, what changed, why it broke, the user-visible impact, the fix, and the regression tests that protect it.
 - Keep entries factual and short enough to scan during future implementation work.
 
+## 2026-05-21: Repeated Route Analysis Replayed Cached Candidates
+
+### Scenario
+
+The same Porto route was priced several times within one hour after provider results had already been written to SQLite.
+
+### Symptom
+
+The log showed many cached Aviasales leg hits, but repeated analysis still felt slow because the optimizer replayed transfer/date/stay and fallback candidate evaluation on every run.
+
+### Triggering Change
+
+Leg-level SQLite caching was added before full route-analysis caching. Later date-flex and stay-flex work increased the number of candidate combinations that could be replayed.
+
+### Root Cause
+
+The cache only stored individual provider leg results. It did not store:
+
+- Final route-analysis results.
+- Candidate transfer/fallback leg bundles.
+- Provider quota/rate-limit disablement across requests.
+
+### User-Visible Impact
+
+Repeated searches spent time walking the same candidate graph even when most provider responses came from cache. SerpApi quota exhaustion could also be checked again on each new request.
+
+### Fix
+
+- Add full route-analysis caching keyed by normalized legs, requirements, passengers, and pricing config.
+- Add candidate/fallback/tail bundle caching.
+- Persist provider quota/rate-limit disablement briefly in SQLite.
+- Batch-load cached provider quotes for each leg.
+- Compact duplicate partial route options after ranking.
+
+### Regression Coverage
+
+Added API and provider tests covering:
+
+- Full route-analysis cache reuse on repeated price requests.
+- Persisted SerpApi quota disablement across repeated route analyses.
+
 ## 2026-05-21: Saint Petersburg Was Routed Through Gdansk Before Kaliningrad
 
 ### Scenario

@@ -162,6 +162,10 @@ Expected behavior:
 ## Non-Functional Requirements
 
 - Avoid unnecessary API calls through caching, provider disabling, early pruning, route intelligence, compact progress, and grouped diagnostics.
+- Repeated analysis of the same priced route within the cache TTL should reuse the full route-analysis cache instead of replaying transfer/fallback candidate evaluation.
+- Candidate transfer/fallback leg groups should use a bundle cache so repeated runs can skip walking provider logic when all legs in the group were already quoted.
+- Provider quota/rate-limit disablement should persist briefly in SQLite, so a known exhausted provider is skipped across repeated requests instead of being probed once per run.
+- Leg-level cache lookup should batch-read provider candidates for a leg before deciding whether network calls are needed.
 - Preserve enough diagnostics to understand why no route was selected.
 - Keep the UI dense and operational rather than marketing-style.
 - Do not hide partial results when pricing is incomplete.
@@ -174,6 +178,9 @@ Expected behavior:
 - `TRAVELPAYOUTS_MARKER`: Optional affiliate marker for Aviasales search links.
 - `YANDEX_RASP_API_KEY`: Enables Yandex Rasp schedule fallback.
 - `FLIGHT_PRICE_CACHE_DB`: Optional SQLite cache path.
+- `PRICE_ROUTE_ANALYSIS_CACHE_TTL_MS`: Full route-analysis cache TTL. Defaults to one hour.
+- `PRICE_BUNDLE_CACHE_TTL_MS`: Candidate/fallback/tail leg bundle cache TTL. Defaults to one hour.
+- `PROVIDER_DISABLE_CACHE_TTL_MS`: Provider quota/rate-limit disable cache TTL. Defaults to 30 minutes.
 - `POPULAR_ROUTE_SEARCH_DAYS`: Search-day count for non-flex popular-route checks.
 - `POPULAR_ROUTE_DATE_FLEX_DAYS`: Date-flex radius for popular transfer pricing.
 - `POPULAR_ROUTE_STAY_FLEX_DAYS`: Extra destination stay days to compare after a transfer replacement. Defaults to 1.

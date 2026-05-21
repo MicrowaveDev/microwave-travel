@@ -101,11 +101,33 @@ describe('travel API endpoints', () => {
     });
     assert.equal(response.status, 200);
     const lines = (await response.text()).trim().split('\n').map((line) => JSON.parse(line));
-    assert.ok(lines.some((line) => line.type === 'progress' && line.event.step === 'compare-start'));
+    assert.ok(lines.some((line) =>
+      line.type === 'progress' &&
+      (line.event.step === 'compare-start' || line.event.step === 'pricing-cache-hit')
+    ));
     assert.ok(lines.filter((line) => line.type === 'progress').length < 120);
     assert.ok(!lines.some((line) => line.type === 'progress' && line.event.details?.phase === 'Compare option'));
     const result = lines.find((line) => line.type === 'result');
     assert.equal(result.quote.optimization.dateShiftDays, 1);
+  });
+
+  it('reuses cached full route analysis for repeated price requests', async () => {
+    clearFlightPriceCache();
+    const plan = await postJson('/api/optimize', tripInput);
+    await postJson('/api/prices', { legs: plan.legs });
+    const response = await fetch(`${baseUrl}/api/prices/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ legs: plan.legs })
+    });
+    assert.equal(response.status, 200);
+    const lines = (await response.text()).trim().split('\n').map((line) => JSON.parse(line));
+    assert.ok(lines.some((line) => line.type === 'progress' && line.event.step === 'pricing-cache-hit'));
+    assert.ok(!lines.some((line) => line.type === 'progress' && line.event.step === 'compare-start'));
+    const result = lines.find((line) => line.type === 'result');
+    assert.equal(result.quote.cached, true);
+    assert.equal(result.quote.cacheType, 'route-analysis');
+    assert.equal(result.quote.totalAmount, 1127);
   });
 });
 
