@@ -631,6 +631,20 @@ function legProvider(index) {
 
 function legBooking(index) {
   const leg = plan.value?.legs?.[index];
+  const pricedLeg = activePriceLegs.value.find((candidate) =>
+    candidate.from === leg?.from &&
+    candidate.to === leg?.to &&
+    candidate.departureDate === leg?.departOn &&
+    (candidate.bookingGroupUrl || candidate.bookingUrl)
+  );
+  if (!pricedLeg) return null;
+  if (pricedLeg.bookingGroupUrl) {
+    return {
+      bookingUrl: pricedLeg.bookingGroupUrl,
+      bookingLabel: pricedLeg.bookingGroupLabel,
+      bookingNote: pricedLeg.bookingGroupNote
+    };
+  }
   return activePriceLegs.value.find((pricedLeg) =>
     pricedLeg.from === leg?.from &&
     pricedLeg.to === leg?.to &&

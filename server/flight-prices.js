@@ -67,7 +67,7 @@ const POPULAR_ROUTE_SEARCH_DAYS = Number(process.env.POPULAR_ROUTE_SEARCH_DAYS |
 const POPULAR_ROUTE_DATE_FLEX_DAYS = Number(process.env.POPULAR_ROUTE_DATE_FLEX_DAYS || 2);
 const PRICE_COMPARE_PROGRESS_DETAIL = process.env.PRICE_COMPARE_PROGRESS_DETAIL || 'compact';
 const LEG_QUOTE_CACHE_TTL_MS = 60 * 60 * 1000;
-const AVIASALES_SEARCH_BASE_URL = process.env.AVIASALES_SEARCH_BASE_URL || 'https://search.aviasales.com/flights/';
+const AVIASALES_SEARCH_BASE_URL = process.env.AVIASALES_SEARCH_BASE_URL || 'https://www.aviasales.com/search/';
 let amadeusTokenCache = null;
 
 export async function quoteFlightPrices(input, options = {}) {
@@ -1204,16 +1204,17 @@ async function getAmadeusToken() {
 function normalizeQuote(provider, legs, attempts = []) {
   const priced = legs.filter((leg) => Number.isFinite(leg.amount));
   const activeProviders = [...new Set(legs.map((leg) => leg.provider).filter(Boolean))];
+  const normalizedLegs = addBookingLinks(legs.map((leg) => ({
+    ...leg,
+    amount: Number.isFinite(leg.amount) ? roundMoney(leg.amount) : null
+  })));
   return {
     provider,
     currency: 'USD',
     totalAmount: priced.length === legs.length ? roundMoney(priced.reduce((sum, leg) => sum + leg.amount, 0)) : null,
     pricedLegCount: priced.length,
     legCount: legs.length,
-    legs: legs.map((leg) => addBookingLink({
-      ...leg,
-      amount: Number.isFinite(leg.amount) ? roundMoney(leg.amount) : null
-    })),
+    legs: normalizedLegs,
     attempts,
     message:
       priced.length === legs.length
@@ -1226,9 +1227,25 @@ function normalizeQuote(provider, legs, attempts = []) {
   };
 }
 
+function addBookingLinks(legs) {
+  const linkedLegs = legs.map(addBookingLink);
+  for (const group of contiguousFlightGroups(linkedLegs)) {
+    if (group.length < 2) continue;
+    const url = buildAviasalesSearchUrlForLegs(group);
+    if (!url) continue;
+    const route = group.map((leg) => leg.from).concat(group.at(-1).to).join(' -> ');
+    for (const leg of group) {
+      leg.bookingGroupUrl = url;
+      leg.bookingGroupLabel = 'Search transfer route';
+      leg.bookingGroupNote = `Search ${route}; compare final checkout price before booking.`;
+    }
+  }
+  return linkedLegs;
+}
+
 function addBookingLink(leg) {
   if (leg.mode === 'bus' || !leg.origin || !leg.destination || !leg.departureDate) return leg;
-  const url = buildAviasalesSearchUrl(leg);
+  const url = buildAviasalesSearchUrlForLegs([leg]);
   if (!url) return leg;
   const hasAffiliateMarker = Boolean(process.env.TRAVELPAYOUTS_MARKER);
   return {
@@ -1242,14 +1259,37 @@ function addBookingLink(leg) {
   };
 }
 
-function buildAviasalesSearchUrl(leg) {
+function contiguousFlightGroups(legs) {
+  const groups = [];
+  let current = [];
+  for (const leg of legs) {
+    const canContinue = current.length > 0 &&
+      current.at(-1).destination === leg.origin &&
+      !current.at(-1).stayHoursAfter &&
+      leg.mode !== 'bus' &&
+      leg.origin &&
+      leg.destination &&
+      leg.departureDate;
+    if (!canContinue && current.length > 0) {
+      groups.push(current);
+      current = [];
+    }
+    if (leg.mode !== 'bus' && leg.origin && leg.destination && leg.departureDate) {
+      current.push(leg);
+    }
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
+function buildAviasalesSearchUrlForLegs(legs) {
   try {
     const url = new URL(AVIASALES_SEARCH_BASE_URL);
+    const searchPath = legs.map((leg) =>
+      `${leg.origin}${formatAviasalesPathDate(leg.departureDate)}${leg.destination}1`
+    ).join('');
+    url.pathname = `${url.pathname.replace(/\/?$/, '/')}${searchPath}`;
     url.search = new URLSearchParams({
-      origin_iata: leg.origin,
-      destination_iata: leg.destination,
-      depart_date: leg.departureDate,
-      oneway: '1',
       adults: '1',
       children: '0',
       infants: '0',
@@ -1262,6 +1302,10 @@ function buildAviasalesSearchUrl(leg) {
   } catch {
     return null;
   }
+}
+
+function formatAviasalesPathDate(date) {
+  return `${date.slice(8, 10)}${date.slice(5, 7)}`;
 }
 
 function configuredProviders() {

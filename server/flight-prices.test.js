@@ -223,10 +223,11 @@ describe('flight price providers', () => {
 
     assert.equal(quote.totalAmount, 246);
     assert.equal(new URL(quote.legs[0].bookingUrl).searchParams.get('marker'), 'partner123');
-    assert.equal(new URL(quote.legs[0].bookingUrl).searchParams.get('origin_iata'), 'OPO');
-    assert.equal(new URL(quote.legs[0].bookingUrl).searchParams.get('destination_iata'), 'LIS');
-    assert.equal(new URL(quote.legs[0].bookingUrl).searchParams.get('depart_date'), '2026-05-20');
+    assert.match(new URL(quote.legs[0].bookingUrl).pathname, /\/search\/OPO2005LIS1$/);
     assert.equal(quote.legs[0].bookingLabel, 'Affiliate search link');
+    assert.match(new URL(quote.legs[0].bookingGroupUrl).pathname, /\/search\/OPO2005LIS1LIS2105PAR1$/);
+    assert.equal(quote.legs[0].bookingGroupLabel, 'Search transfer route');
+    assert.equal(quote.legs[1].bookingGroupUrl, quote.legs[0].bookingGroupUrl);
     assert.equal(serpApiCalls, 1);
     assert.equal(aviasalesCalls, 2);
     assert.ok(events.some((event) => event.step === 'provider-disabled' && event.details.provider === 'serpapi'));

@@ -125,6 +125,8 @@ Expected behavior:
 ### Booking/Search Links
 
 - Priced flight legs should include prefilled Aviasales search links.
+- Connected transfer flight legs should prefer a whole-transfer Aviasales search link over a single-leg link.
+- Single-leg search links remain a fallback when there is no connected transfer group.
 - If `TRAVELPAYOUTS_MARKER` is configured, links should include the affiliate marker.
 - Booking links are search/affiliate links, not guaranteed discounts.
 - The UI must not imply that an unpriced leg has a confirmed fare.
