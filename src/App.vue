@@ -362,7 +362,7 @@ async function fetchPrices(routePlan = plan.value) {
     if (requestId !== priceRequestId || !payload) return;
     priceQuote.value = payload;
     selectedTransferOptionIndex.value = 0;
-    if (payload.optimizedRouteOptions?.length) {
+    if (payload.optimization && payload.optimizedRouteOptions?.length) {
       applyTransferOption(0, routePlan);
     } else if (payload.optimizedRouteLegs?.length) {
       applyRouteLegs(payload.optimizedRouteLegs, routePlan);

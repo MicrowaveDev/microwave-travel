@@ -455,6 +455,49 @@ describe('flight price providers', () => {
     assert.ok(events.some((event) => event.step === 'date-window-pruned' && event.details?.reason === 'stay-time-window'));
   });
 
+  it('keeps skipped transfer candidates when no valid Porto to Dubai transfer is fully priced', async () => {
+    clearFlightPriceCache();
+    const originalSerpApiKey = process.env.SERPAPI_KEY;
+    const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
+    const originalYandexKey = process.env.YANDEX_RASP_API_KEY;
+    const originalFetch = globalThis.fetch;
+    delete process.env.SERPAPI_KEY;
+    process.env.TRAVELPAYOUTS_TOKEN = 'test-aviasales-token';
+    delete process.env.YANDEX_RASP_API_KEY;
+
+    const routePrices = new Map([
+      ['DXB-MOW', 520]
+    ]);
+    globalThis.fetch = async (url) => {
+      const params = new URL(url).searchParams;
+      const route = `${params.get('origin')}-${params.get('destination')}`;
+      const price = routePrices.get(route);
+      return Response.json({
+        success: true,
+        data: price ? [{ price, currency: 'usd', airline: 'Test Air', search_id: `search-${route}` }] : []
+      });
+    };
+
+    const quote = await quoteFlightPrices({
+      legs: [
+        { from: 'Porto', to: 'Dubai', departOn: '2026-05-20', arriveBy: '2026-05-20', mode: 'flight', stayHoursAfter: 72, stayDaysAfter: 3 },
+        { from: 'Dubai', to: 'Moscow', departOn: '2026-05-23', mode: 'flight' }
+      ]
+    });
+
+    globalThis.fetch = originalFetch;
+    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
+    restoreEnv('TRAVELPAYOUTS_TOKEN', originalTravelpayoutsToken);
+    restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
+    clearFlightPriceCache();
+
+    assert.equal(quote.optimization, undefined);
+    assert.equal(quote.optimizedRouteOptions.length, 0);
+    assert.ok(quote.optimizedRouteSkippedOptions.some((option) => option.reason === 'missing-price'));
+    assert.ok(quote.optimizedRouteSkippedOptions.some((option) => option.reason === 'stay-time-window'));
+    assert.match(quote.message, /No complete priced transfer route/);
+  });
+
   it('replaces a missing Europe to Porto return price with a priced fallback hub route', async () => {
     clearFlightPriceCache();
     const originalSerpApiKey = process.env.SERPAPI_KEY;

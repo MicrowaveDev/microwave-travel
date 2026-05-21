@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { clearFlightPriceCache, quoteFlightPrices } from '../server/flight-prices.js';
 import { optimizeTrip } from '../server/optimizer.js';
 
