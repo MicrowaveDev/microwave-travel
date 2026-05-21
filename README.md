@@ -4,7 +4,7 @@ Simple Vue + Node.js travel planner for turning rough trip requirements into an 
 
 The current optimizer is an MVP: it uses a small built-in city/route heuristic dataset, supports repeated stops, checks deadline requirements such as `Dubai before 1 June`, and prices flight legs through configured providers when possible.
 
-See [docs/requirements.md](docs/requirements.md) for the product requirements, pricing behavior, provider fallback rules, route intelligence, date-flex transfer search, and verification expectations.
+See [docs/requirements.md](docs/requirements.md) for the product requirements, pricing behavior, provider fallback rules, route intelligence, date-flex transfer search, and verification expectations. Known algorithm regressions and guardrails are tracked in [docs/algorithm-regressions.md](docs/algorithm-regressions.md).
 
 ## Run
 

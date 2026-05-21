@@ -159,6 +159,8 @@ Expected behavior:
 
 ## Verification Requirements
 
+Before changing route ordering, transfer insertion, provider fallback, date-flex search, route intelligence, or return-leg recovery, review [algorithm-regressions.md](algorithm-regressions.md). When a new algorithm regression appears, add an entry there with the symptom, cause, fix, and regression coverage.
+
 Run before handoff:
 
 ```bash
