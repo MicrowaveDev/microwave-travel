@@ -1,5 +1,11 @@
 import { buildLegsForRoute } from './optimizer.js';
 import {
+  formatDateOnly,
+  formatDateShift,
+  popularRouteDateChoices,
+  shiftDisplayLegDates
+} from './date-utils.js';
+import {
   clearCachedFlightPrices,
   closeFlightPriceCache,
   getCachedFlightPrice,
@@ -148,7 +154,12 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   const comparableCandidates = [];
   const skippedCandidates = [];
   const routes = popularTransferRoutes(direction);
-  const dateChoices = popularRouteDateChoices(currentSuffix[0].departOn, startIndex);
+  const dateChoices = popularRouteDateChoices(
+    currentSuffix[0].departOn,
+    startIndex,
+    POPULAR_ROUTE_SEARCH_DAYS,
+    POPULAR_ROUTE_DATE_FLEX_DAYS
+  );
   const tailQuoteCache = new Map();
 
   emitProgress(onProgress, 'compare-start', `Comparing ${routes.length} ${direction.from} to ${direction.to} route options across ${dateChoices.length} dates.`, {
@@ -583,21 +594,6 @@ function popularTransferRoutes(direction) {
   ];
 }
 
-function popularRouteDateChoices(startDate, startIndex) {
-  if (startIndex !== 0) {
-    return dateWindow(startDate, POPULAR_ROUTE_SEARCH_DAYS).map((date) => ({ date, offsetDays: daysBetween(startDate, date) }));
-  }
-
-  const offsets = [0];
-  for (let days = 1; days <= POPULAR_ROUTE_DATE_FLEX_DAYS; days += 1) {
-    offsets.push(days, -days);
-  }
-  return offsets.map((offsetDays) => ({
-    date: addDaysToDateString(startDate, offsetDays),
-    offsetDays
-  }));
-}
-
 async function quoteShiftedTailForDateOffset(offsetDays, tailDisplayLegs, options = {}) {
   const cacheKey = String(offsetDays);
   if (options.cache?.has(cacheKey)) return options.cache.get(cacheKey);
@@ -622,15 +618,6 @@ async function quoteShiftedTailForDateOffset(offsetDays, tailDisplayLegs, option
   return result;
 }
 
-function shiftDisplayLegDates(legs, offsetDays) {
-  if (!offsetDays) return legs;
-  return legs.map((leg) => ({
-    ...leg,
-    departOn: leg.departOn ? addDaysToDateString(leg.departOn, offsetDays) : leg.departOn,
-    arriveBy: leg.arriveBy ? addDaysToDateString(leg.arriveBy, offsetDays) : leg.arriveBy
-  }));
-}
-
 function quoteTotalForDisplayLegs(displayLegs, quoteLegs) {
   let total = 0;
   for (const displayLeg of displayLegs) {
@@ -644,34 +631,6 @@ function quoteTotalForDisplayLegs(displayLegs, quoteLegs) {
 
 function sameDisplayLeg(displayLeg, quotedLeg) {
   return displayLeg.from === quotedLeg.from && displayLeg.to === quotedLeg.to && displayLeg.departOn === quotedLeg.departureDate;
-}
-
-function dateWindow(startDate, days) {
-  const start = new Date(`${startDate}T00:00:00.000Z`);
-  return Array.from({ length: days }, (_, index) => {
-    const date = new Date(start);
-    date.setUTCDate(date.getUTCDate() + index);
-    return date.toISOString().slice(0, 10);
-  });
-}
-
-function daysBetween(startDate, endDate) {
-  const start = new Date(`${startDate}T00:00:00.000Z`);
-  const end = new Date(`${endDate}T00:00:00.000Z`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
-  return Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
-}
-
-function addDaysToDateString(date, days) {
-  const value = new Date(`${date}T00:00:00.000Z`);
-  if (Number.isNaN(value.getTime())) return date;
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
-}
-
-function formatDateShift(offsetDays) {
-  if (!offsetDays) return '';
-  return ` (${offsetDays > 0 ? '+' : ''}${offsetDays}d flex)`;
 }
 
 async function tryProvider(name, fn) {
@@ -1220,10 +1179,6 @@ function providerError(payload, fallback) {
 
 function addHoursToDate(date, hours) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
-}
-
-function formatDateOnly(date) {
-  return date.toISOString().slice(0, 10);
 }
 
 function formatStayDays(days) {

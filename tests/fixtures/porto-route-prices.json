@@ -1,0 +1,44 @@
+{
+  "description": "Deterministic Porto -> Dubai -> Moscow -> Kaliningrad regression prices captured from the project scenario. SerpApi is exhausted so Aviasales fallback drives pricing.",
+  "serpapi": {
+    "error": "Your account has run out of searches."
+  },
+  "aviasales": {
+    "prices": {
+      "OPO-DXB-2026-05-20": { "price": 426, "carrier": "TP" },
+      "OPO-DXB-2026-05-21": { "price": 378, "carrier": "TP" },
+      "OPO-MAD-2026-05-21": { "price": 23, "carrier": "FR" },
+      "MAD-DXB-2026-05-21": { "price": 254, "carrier": "PC" },
+      "OPO-ATH-2026-05-20": { "price": 110, "carrier": "A3" },
+      "ATH-DXB-2026-05-20": { "price": 237, "carrier": "A3" },
+      "OPO-BCN-2026-05-20": { "price": 30, "carrier": "VY" },
+      "BCN-DXB-2026-05-20": { "price": 320, "carrier": "PC" },
+      "OPO-ROM-2026-05-20": { "price": 40, "carrier": "W6" },
+      "ROM-DXB-2026-05-20": { "price": 338, "carrier": "PC" },
+      "OPO-MIL-2026-05-20": { "price": 47, "carrier": "FR" },
+      "MIL-DXB-2026-05-20": { "price": 332, "carrier": "PC" },
+      "OPO-WAW-2026-05-20": { "price": 108, "carrier": "W6" },
+      "WAW-DXB-2026-05-20": { "price": 299, "carrier": "FZ" },
+      "OPO-IST-2026-05-20": { "price": 144, "carrier": "TK" },
+      "IST-DXB-2026-05-20": { "price": 276, "carrier": "PC" },
+      "OPO-BEG-2026-05-20": { "price": 107, "carrier": "JU" },
+      "BEG-DXB-2026-05-20": { "price": 326, "carrier": "FZ" },
+      "OPO-ZRH-2026-05-20": { "price": 114, "carrier": "LX" },
+      "ZRH-DXB-2026-05-20": { "price": 388, "carrier": "PC" },
+      "OPO-AMS-2026-05-20": { "price": 99, "carrier": "HV" },
+      "AMS-DXB-2026-05-20": { "price": 427, "carrier": "PC" },
+      "OPO-LIS-2026-05-20": { "price": 116, "carrier": "TP" },
+      "LIS-DXB-2026-05-20": { "price": 415, "carrier": "EK" },
+      "OPO-PAR-2026-05-20": { "price": 85, "carrier": "TO" },
+      "PAR-DXB-2026-05-20": { "price": 456, "carrier": "PC" },
+      "DXB-MOW-2026-05-23": { "price": 520, "carrier": "FZ" },
+      "DXB-MOW-2026-05-24": { "price": 520, "carrier": "FZ" },
+      "MOW-KGD-2026-06-06": { "price": 97, "carrier": "DP" },
+      "MOW-KGD-2026-06-07": { "price": 97, "carrier": "DP" },
+      "GDN-LIS-2026-06-13": { "price": 171, "carrier": "W6" },
+      "LIS-OPO-2026-06-13": { "price": 62, "carrier": "TP" },
+      "GDN-LIS-2026-06-14": { "price": 171, "carrier": "W6" },
+      "LIS-OPO-2026-06-14": { "price": 62, "carrier": "TP" }
+    }
+  }
+}

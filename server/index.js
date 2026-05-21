@@ -1,53 +1,11 @@
 import 'dotenv/config';
-import cors from 'cors';
-import express from 'express';
-import { quoteFlightPrices } from './flight-prices.js';
-import { optimizeTrip } from './optimizer.js';
+import { installFixtureFetchFromEnv } from './test-fixture-fetch.js';
+import { createApp } from './app.js';
 
-const app = express();
+installFixtureFetchFromEnv();
+
 const port = process.env.PORT || 3444;
-
-app.use(cors());
-app.use(express.json({ limit: '1mb' }));
-
-app.get('/api/health', (_request, response) => {
-  response.json({ ok: true });
-});
-
-app.post('/api/optimize', (request, response) => {
-  try {
-    response.json(optimizeTrip(request.body || {}));
-  } catch (error) {
-    response.status(400).json({ error: error.message });
-  }
-});
-
-app.post('/api/prices', async (request, response) => {
-  try {
-    response.json(await quoteFlightPrices(request.body || {}));
-  } catch (error) {
-    response.status(400).json({ error: error.message });
-  }
-});
-
-app.post('/api/prices/stream', async (request, response) => {
-  response.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
-  response.setHeader('Cache-Control', 'no-cache');
-  response.setHeader('X-Accel-Buffering', 'no');
-
-  const writeEvent = (event) => {
-    response.write(`${JSON.stringify({ type: 'progress', event })}\n`);
-  };
-
-  try {
-    const quote = await quoteFlightPrices(request.body || {}, { onProgress: writeEvent });
-    response.write(`${JSON.stringify({ type: 'result', quote })}\n`);
-    response.end();
-  } catch (error) {
-    response.write(`${JSON.stringify({ type: 'error', error: error.message })}\n`);
-    response.end();
-  }
-});
+const app = createApp();
 
 app.listen(port, () => {
   console.log(`Microwave Travel API listening on http://127.0.0.1:${port}`);
