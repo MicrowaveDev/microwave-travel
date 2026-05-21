@@ -14,7 +14,9 @@
     "test:api": "node --test tests/api/*.test.js",
     "test:e2e": "playwright test",
     "test:all": "npm test && npm run build && npm run test:route:porto && npm run test:e2e",
-    "test:route:porto": "node scripts/test-porto-route.js"
+    "test:route:porto": "node scripts/test-porto-route.js",
+    "baggage:lookup": "node scripts/baggage-allowance.js lookup",
+    "baggage:add": "node scripts/baggage-allowance.js add"
   },
   "dependencies": {
     "@vitejs/plugin-vue": "^5.2.1",

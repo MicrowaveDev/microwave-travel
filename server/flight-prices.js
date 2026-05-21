@@ -12,6 +12,7 @@ import {
   setCachedFlightPrice
 } from './flight-price-cache.js';
 import { airlineInfoForCarrier } from './airlines.js';
+import { baggageAllowanceForCarrier } from './baggage-allowances.js';
 import { rankTransferRoutes } from './route-intelligence.js';
 
 const CITY_IATA_CODES = new Map([
@@ -1186,7 +1187,7 @@ async function quoteLegWithYandexRasp(leg) {
 }
 
 function baggageAllowanceFromOffer(provider, offer) {
-  if (!offer) return unknownBaggageAllowance(provider);
+  if (!offer) return null;
   const parts = uniqueStrings([
     ...collectBaggageStrings(offer),
     ...collectBaggageStrings(offer.baggage),
@@ -1202,7 +1203,7 @@ function baggageAllowanceFromOffer(provider, offer) {
     ...collectBaggageStrings(offer.checkedBaggage),
     ...(Array.isArray(offer.flights) ? offer.flights.flatMap((flight) => collectBaggageStrings(flight)) : [])
   ]);
-  if (parts.length === 0) return unknownBaggageAllowance(provider);
+  if (parts.length === 0) return null;
   return {
     source: provider,
     summary: parts.slice(0, 3).join('; '),
@@ -1329,11 +1330,32 @@ function normalizeQuote(provider, legs, attempts = []) {
 }
 
 function withNormalizedBaggage(leg) {
-  if (!leg || leg.mode === 'bus' || leg.baggageAllowance || !leg.provider) return leg;
+  if (!leg || leg.mode === 'bus' || !leg.provider) return leg;
+  if (leg.baggageAllowance && !baggageAllowanceIsUnknown(leg.baggageAllowance)) return leg;
+  const localAllowance = baggageAllowanceForCarrier(leg.carrier, {
+    fareType: leg.fareType || leg.ticketType || leg.fareClass
+  });
+  if (localAllowance) {
+    return {
+      ...leg,
+      baggageAllowance: localAllowance
+    };
+  }
   return {
     ...leg,
     baggageAllowance: unknownBaggageAllowance(leg.provider)
   };
+}
+
+function baggageAllowanceIsUnknown(baggageAllowance) {
+  return (
+    !baggageAllowance ||
+    (
+      Array.isArray(baggageAllowance.details) &&
+      baggageAllowance.details.length === 0 &&
+      /did not return baggage allowance/i.test(baggageAllowance.summary || '')
+    )
+  );
 }
 
 function withNormalizedAirline(leg) {

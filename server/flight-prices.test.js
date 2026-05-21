@@ -139,7 +139,7 @@ describe('flight price providers', () => {
     assert.match(quote.legs[0].baggageAllowance.summary, /Checked bag costs extra/);
   });
 
-  it('marks baggage allowance as unknown when Aviasales does not return it', async () => {
+  it('uses local baggage fallback when Aviasales does not return baggage details', async () => {
     clearFlightPriceCache();
     const originalSerpApiKey = process.env.SERPAPI_KEY;
     const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
@@ -163,13 +163,42 @@ describe('flight price providers', () => {
     restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
     clearFlightPriceCache();
 
-    assert.equal(quote.legs[0].baggageAllowance.source, 'aviasales');
-    assert.match(quote.legs[0].baggageAllowance.summary, /did not return baggage allowance/);
+    assert.equal(quote.legs[0].baggageAllowance.source, 'local-db');
+    assert.match(quote.legs[0].baggageAllowance.summary, /hand baggage/i);
+    assert.equal(quote.legs[0].baggageAllowance.sourceUrl, 'https://www.flytap.com/en-gb/information/baggage/hand-baggage');
     assert.deepEqual(quote.legs[0].airline, {
       code: 'TP',
       name: 'TAP Air Portugal',
       website: 'https://www.flytap.com/'
     });
+  });
+
+  it('marks baggage allowance as unknown when no provider or local baggage rule is available', async () => {
+    clearFlightPriceCache();
+    const originalSerpApiKey = process.env.SERPAPI_KEY;
+    const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
+    const originalYandexKey = process.env.YANDEX_RASP_API_KEY;
+    const originalFetch = globalThis.fetch;
+    delete process.env.SERPAPI_KEY;
+    process.env.TRAVELPAYOUTS_TOKEN = 'test-aviasales-token';
+    delete process.env.YANDEX_RASP_API_KEY;
+    globalThis.fetch = async () => Response.json({
+      success: true,
+      data: [{ price: 88, currency: 'usd', airline: 'ZZ', search_id: 'aviasales-unknown-bags' }]
+    });
+
+    const quote = await quoteFlightPrices({
+      legs: [{ from: 'Porto', to: 'Lisbon', departOn: '2026-05-20', mode: 'flight' }]
+    });
+
+    globalThis.fetch = originalFetch;
+    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
+    restoreEnv('TRAVELPAYOUTS_TOKEN', originalTravelpayoutsToken);
+    restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
+    clearFlightPriceCache();
+
+    assert.equal(quote.legs[0].baggageAllowance.source, 'aviasales');
+    assert.match(quote.legs[0].baggageAllowance.summary, /did not return baggage allowance/);
   });
 
   it('emits route comparison progress for popular transfer checks', async () => {

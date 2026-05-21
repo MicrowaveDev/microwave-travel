@@ -25,7 +25,7 @@ The app returns:
 - Stay separators between route legs.
 - Flight price estimates when providers return USD fares.
 - Airline name and official website link for each priced flight when the carrier can be resolved.
-- Baggage allowance text for each flight when providers return it, or an explicit check-fare-rules note when they do not.
+- Baggage allowance text for each flight from provider data or the curated local airline/fare database, with an explicit check-fare-rules note when no rule is known.
 - Transfer alternatives for expensive or unpriced popular route segments.
 - A log explaining provider attempts, cache hits, skipped candidates, and selected replacements.
 
@@ -81,7 +81,10 @@ Expected behavior:
 - Display the operating/marketing airline carrier returned by the provider for each priced leg.
 - Resolve known carrier codes to readable airline names and official airline websites; keep unknown carrier text visible without inventing a link.
 - Display baggage allowance per flight leg from normalized provider data.
-- When a provider does not return baggage allowance, show that the allowance is unknown and must be checked before booking.
+- When a provider does not return baggage allowance, use the curated local baggage database if the carrier/fare type can be resolved.
+- The local baggage database must store carrier, fare type, summary, cabin/checked allowance, official source URL, last-updated date, and notes.
+- Local baggage entries are fallback hints only; the UI must still tell users to verify exact fare rules before booking.
+- Agents can add missing local baggage entries with `npm run baggage:lookup -- --carrier <IATA> [--fare <type>]` and `npm run baggage:add -- --carrier <IATA> --fare <type> --summary "..." --cabin "..." --checked "..." --url "<official airline URL>"`.
 
 ### Provider Priority And Fallback
 

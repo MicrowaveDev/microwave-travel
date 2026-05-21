@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "updatedAt": "2026-05-21",
+  "entries": [
+    {
+      "carrier": "A3",
+      "fareType": "light",
+      "summary": "Usual Light fare: one cabin bag up to 8 kg; checked baggage is not included.",
+      "cabin": "1 cabin bag up to 8 kg",
+      "checked": "Not included",
+      "sourceUrl": "https://en.aegeanair.com/travel-info/travelling-with-aegean/baggage/cabin-baggage/",
+      "updatedAt": "2026-05-21",
+      "notes": "Fare-family and route rules can change; verify on AEGEAN before booking."
+    },
+    {
+      "carrier": "FR",
+      "fareType": "basic",
+      "summary": "Usual Basic fare: one small personal bag under the seat; larger cabin and checked bags cost extra.",
+      "cabin": "1 small personal bag, 40 x 30 x 20 cm",
+      "checked": "Not included",
+      "sourceUrl": "https://help.ryanair.com/hc/en-gb/articles/12888036565521-Ryanair-s-Bag-Policy",
+      "updatedAt": "2026-05-21",
+      "notes": "Ryanair sell Priority/checked-bag add-ons; verify fare extras before booking."
+    },
+    {
+      "carrier": "FZ",
+      "fareType": "lite",
+      "summary": "Usual Economy Lite fare: hand baggage only; Value/Flex fares include checked baggage.",
+      "cabin": "Economy hand baggage up to 7 kg",
+      "checked": "Not included on Lite",
+      "sourceUrl": "https://www.flydubai.com/en/flying-with-us/baggage/",
+      "updatedAt": "2026-05-21",
+      "notes": "Checked allowance varies by fare family and route; verify on flydubai before booking."
+    },
+    {
+      "carrier": "PC",
+      "fareType": "light",
+      "summary": "Usual Light package: limited under-seat/cabin allowance; cabin or checked baggage may need to be purchased.",
+      "cabin": "Limited cabin/under-seat allowance on Light package",
+      "checked": "Not included on Light",
+      "sourceUrl": "https://www.flypgs.com/en/travel-services/flight-services/flight-packages",
+      "updatedAt": "2026-05-21",
+      "notes": "Pegasus package rules differ by domestic, international, and Cyprus flights; verify the selected package."
+    },
+    {
+      "carrier": "TP",
+      "fareType": "discount",
+      "summary": "Usual Economy Discount fare: one hand baggage item and one personal item; checked baggage depends on fare/route.",
+      "cabin": "1 hand baggage item plus 1 personal item in Economy",
+      "checked": "Depends on fare and route",
+      "sourceUrl": "https://www.flytap.com/en-gb/information/baggage/hand-baggage",
+      "updatedAt": "2026-05-21",
+      "notes": "TAP Basic may include hold baggage on some intercontinental fares; verify exact fare rules."
+    },
+    {
+      "carrier": "W6",
+      "fareType": "basic",
+      "summary": "Usual Basic fare: one free small cabin bag; trolley cabin bag and checked baggage cost extra unless bundled.",
+      "cabin": "1 small cabin bag",
+      "checked": "Not included",
+      "sourceUrl": "https://wizzair.com/en-gb/help-centre/booking-information-and-services/baggage/baggage-allowance/checked-in-baggage",
+      "updatedAt": "2026-05-21",
+      "notes": "WIZZ Priority/Go/Plus bundles can change cabin and checked allowance; verify before booking."
+    }
+  ]
+}
