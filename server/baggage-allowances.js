@@ -1,5 +1,5 @@
-import baggageAllowanceData from '../data/baggage-allowances.json' with { type: 'json' };
 import { airlineInfoForCarrier, normalizeCarrierCode } from './airlines.js';
+import { baggageAllowanceEntries, findBaggageAllowanceEntries } from './baggage-allowance-db.js';
 
 const DEFAULT_FARE_TYPES = ['basic', 'light', 'lite', 'discount', 'economy'];
 
@@ -25,12 +25,8 @@ export function baggageAllowanceForCarrier(carrier, options = {}) {
       entry.notes || null
     ].filter(Boolean),
     included: null,
-    updatedAt: entry.updatedAt || baggageAllowanceData.updatedAt || null
+    updatedAt: entry.updatedAt || null
   };
-}
-
-export function baggageAllowanceEntries() {
-  return [...(baggageAllowanceData.entries || [])];
 }
 
 export function normalizeFareType(value) {
@@ -41,14 +37,14 @@ export function normalizeFareType(value) {
 }
 
 function findAllowanceEntryByCode(code, fareType) {
-  const entries = (baggageAllowanceData.entries || []).filter((entry) => normalizeCarrierCode(entry.carrier) === code);
+  const entries = findBaggageAllowanceEntries(code);
   return findAllowanceEntry(entries, fareType);
 }
 
 function findAllowanceEntryByAirlineName(name, fareType) {
   const normalizedName = normalizeFareType(name);
   if (!normalizedName) return null;
-  const entries = (baggageAllowanceData.entries || []).filter((entry) =>
+  const entries = baggageAllowanceEntries().filter((entry) =>
     normalizeFareType(airlineInfoForCarrier(entry.carrier)?.name) === normalizedName
   );
   return findAllowanceEntry(entries, fareType);

@@ -16,7 +16,8 @@
     "test:all": "npm test && npm run build && npm run test:route:porto && npm run test:e2e",
     "test:route:porto": "node scripts/test-porto-route.js",
     "baggage:lookup": "node scripts/baggage-allowance.js lookup",
-    "baggage:add": "node scripts/baggage-allowance.js add"
+    "baggage:add": "node scripts/baggage-allowance.js add",
+    "baggage:import-seed": "node scripts/baggage-allowance.js import-seed"
   },
   "dependencies": {
     "@vitejs/plugin-vue": "^5.2.1",

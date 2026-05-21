@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { airlineInfoForCarrier, normalizeCarrierCode } from '../server/airlines.js';
-
-const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const dataPath = resolve(rootDir, 'data/baggage-allowances.json');
+import {
+  baggageAllowanceEntries,
+  closeBaggageAllowanceDb,
+  seedBaggageAllowances,
+  upsertBaggageAllowanceEntry
+} from '../server/baggage-allowance-db.js';
 
 const [, , command, ...args] = process.argv;
 const flags = parseFlags(args);
@@ -16,10 +16,9 @@ if (!command || ['help', '--help', '-h'].includes(command)) {
 }
 
 if (command === 'lookup') {
-  const data = readData();
   const carrier = requireCarrier(flags);
   const fareType = normalizeFareType(flags.fare || flags.fareType || '');
-  const entries = data.entries.filter((entry) => entry.carrier === carrier);
+  const entries = baggageAllowanceEntries().filter((entry) => entry.carrier === carrier);
   const entry = fareType
     ? entries.find((candidate) => normalizeFareType(candidate.fareType) === fareType)
     : entries[0];
@@ -37,6 +36,7 @@ if (command === 'lookup') {
   console.log(`Checked: ${entry.checked || 'unknown'}`);
   console.log(`Source: ${entry.sourceUrl || 'missing'}`);
   if (entry.notes) console.log(`Notes: ${entry.notes}`);
+  closeBaggageAllowanceDb();
   process.exit(0);
 }
 
@@ -45,7 +45,6 @@ if (command === 'add') {
   const fareType = requireValue(flags.fare || flags.fareType, '--fare');
   const summary = requireValue(flags.summary, '--summary');
   const sourceUrl = requireValue(flags.url || flags.sourceUrl, '--url');
-  const data = readData();
   const entry = {
     carrier,
     fareType: normalizeFareType(fareType) || fareType,
@@ -56,13 +55,16 @@ if (command === 'add') {
     updatedAt: new Date().toISOString().slice(0, 10),
     notes: flags.notes || 'Verify the exact fare rules before booking.'
   };
-  const nextEntries = data.entries.filter((candidate) =>
-    !(candidate.carrier === entry.carrier && normalizeFareType(candidate.fareType) === normalizeFareType(entry.fareType))
-  );
-  nextEntries.push(entry);
-  nextEntries.sort((a, b) => `${a.carrier}|${a.fareType}`.localeCompare(`${b.carrier}|${b.fareType}`));
-  writeData({ ...data, updatedAt: entry.updatedAt, entries: nextEntries });
+  upsertBaggageAllowanceEntry(entry);
   console.log(`Saved ${entry.carrier} ${entry.fareType} baggage allowance.`);
+  closeBaggageAllowanceDb();
+  process.exit(0);
+}
+
+if (command === 'import-seed') {
+  const result = seedBaggageAllowances({ replace: flags.replace === 'true' || flags.replace === '1' });
+  console.log(`Seed import complete: inserted ${result.inserted}, skipped ${result.skipped}.`);
+  closeBaggageAllowanceDb();
   process.exit(0);
 }
 
@@ -94,14 +96,6 @@ function requireValue(value, label) {
   return normalized;
 }
 
-function readData() {
-  return JSON.parse(readFileSync(dataPath, 'utf8'));
-}
-
-function writeData(data) {
-  writeFileSync(dataPath, `${JSON.stringify(data, null, 2)}\n`);
-}
-
 function normalizeFareType(value) {
   return String(value || '')
     .toLowerCase()
@@ -113,6 +107,7 @@ function printHelp() {
   console.log(`Usage:
   node scripts/baggage-allowance.js lookup --carrier PC [--fare light]
   node scripts/baggage-allowance.js add --carrier PC --fare light --summary "..." --cabin "..." --checked "..." --url "https://..."
+  node scripts/baggage-allowance.js import-seed [--replace true]
 
 Agent flow:
   1. Use lookup with the carrier/fare shown in the UI.

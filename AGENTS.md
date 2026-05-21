@@ -23,7 +23,7 @@ Before changing route ordering, transfer insertion, provider fallback, date-flex
 
 ## Baggage Allowance Curation
 
-Use the local baggage database when the UI shows a priced flight with an airline/carrier but no useful baggage allowance from providers.
+Use the local SQLite baggage database when the UI shows a priced flight with an airline/carrier but no useful baggage allowance from providers. The checked-in baggage JSON is seed data only; runtime lookups and agent updates should go through SQLite.
 
 Agent flow:
 
@@ -42,7 +42,8 @@ Agent flow:
    ```
 
 5. Keep baggage summaries conservative. Say what is usually included and what depends on route/fare. Do not imply a confirmed allowance for the user's exact ticket unless the provider returned that exact allowance.
-6. Run `npm test` after changing baggage data or baggage resolution code. Run `npm run test:e2e` too if visible itinerary text changes.
+6. If a fresh local database is needed, import the checked-in seed data with `npm run baggage:import-seed`. Use `-- --replace true` only when intentionally resetting the local baggage database.
+7. Run `npm test` after changing baggage data or baggage resolution code. Run `npm run test:e2e` too if visible itinerary text changes.
 
 ## Verification
 
