@@ -102,6 +102,8 @@ describe('travel API endpoints', () => {
     assert.equal(response.status, 200);
     const lines = (await response.text()).trim().split('\n').map((line) => JSON.parse(line));
     assert.ok(lines.some((line) => line.type === 'progress' && line.event.step === 'compare-start'));
+    assert.ok(lines.filter((line) => line.type === 'progress').length < 120);
+    assert.ok(!lines.some((line) => line.type === 'progress' && line.event.details?.phase === 'Compare option'));
     const result = lines.find((line) => line.type === 'result');
     assert.equal(result.quote.optimization.dateShiftDays, 1);
   });

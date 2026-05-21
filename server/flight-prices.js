@@ -58,6 +58,7 @@ const PORTO_DUBAI_TRANSFER_HUBS = [
 const PORTO_RETURN_FALLBACK_HUBS = ['Warsaw', 'Madrid', 'Lisbon', 'Barcelona', 'Paris', 'Amsterdam', 'Milan'];
 const POPULAR_ROUTE_SEARCH_DAYS = Number(process.env.POPULAR_ROUTE_SEARCH_DAYS || 4);
 const POPULAR_ROUTE_DATE_FLEX_DAYS = Number(process.env.POPULAR_ROUTE_DATE_FLEX_DAYS || 2);
+const PRICE_COMPARE_PROGRESS_DETAIL = process.env.PRICE_COMPARE_PROGRESS_DETAIL || 'compact';
 const LEG_QUOTE_CACHE_TTL_MS = 60 * 60 * 1000;
 const AVIASALES_SEARCH_BASE_URL = process.env.AVIASALES_SEARCH_BASE_URL || 'https://search.aviasales.com/flights/';
 let amadeusTokenCache = null;
@@ -103,33 +104,39 @@ export function closeFlightPriceCacheDb() {
 async function quoteNormalizedLegs(legs, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const providerState = options.providerState || createProviderState();
+  const emitLegDetail = shouldEmitDetailedProgress(options.progressDetail);
   const quotedLegs = [];
   const attempts = [];
 
   for (const [index, leg] of legs.entries()) {
-    emitProgress(onProgress, 'leg-start', `${options.phase || 'Pricing'}: ${leg.from} to ${leg.to} on ${leg.departureDate}.`, {
-      phase: options.phase,
-      legIndex: index + 1,
-      legCount: legs.length,
-      route: routeLabel(leg),
-      date: leg.departureDate,
-      candidateRoute: options.candidateRoute || null
-    });
+    if (emitLegDetail) {
+      emitProgress(onProgress, 'leg-start', `${options.phase || 'Pricing'}: ${leg.from} to ${leg.to} on ${leg.departureDate}.`, {
+        phase: options.phase,
+        legIndex: index + 1,
+        legCount: legs.length,
+        route: routeLabel(leg),
+        date: leg.departureDate,
+        candidateRoute: options.candidateRoute || null
+      });
+    }
     const result = await quoteLeg(leg, {
       onProgress,
       phase: options.phase,
       candidateRoute: options.candidateRoute,
-      providerState
+      providerState,
+      progressDetail: options.progressDetail
     });
     quotedLegs.push(result.leg);
     attempts.push(...result.attempts);
     if (options.stopOnUnpriced && !Number.isFinite(result.leg?.amount)) {
-      emitProgress(onProgress, 'candidate-pruned', `Stopping ${options.candidateRoute || 'candidate'} early because ${routeLabel(leg)} has no comparable USD price.`, {
-        route: routeLabel(leg),
-        date: leg.departureDate,
-        candidateRoute: options.candidateRoute || null,
-        reason: result.leg?.error || 'No comparable USD price.'
-      });
+      if (emitLegDetail) {
+        emitProgress(onProgress, 'candidate-pruned', `Stopping ${options.candidateRoute || 'candidate'} early because ${routeLabel(leg)} has no comparable USD price.`, {
+          route: routeLabel(leg),
+          date: leg.departureDate,
+          candidateRoute: options.candidateRoute || null,
+          reason: result.leg?.error || 'No comparable USD price.'
+        });
+      }
       break;
     }
   }
@@ -154,6 +161,8 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   const comparableCandidates = [];
   const skippedCandidates = [];
   const routes = popularTransferRoutes(direction);
+  const progressDetail = progressDetailLevel();
+  const emitCandidateDetail = shouldEmitDetailedProgress(progressDetail);
   const dateChoices = popularRouteDateChoices(
     currentSuffix[0].departOn,
     startIndex,
@@ -173,11 +182,13 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   for (const route of routes) {
     for (const { date: departureDate, offsetDays } of dateChoices) {
       const candidateLabel = route.join(' -> ');
-      emitProgress(onProgress, 'candidate-start', `Trying ${candidateLabel} on ${departureDate}${formatDateShift(offsetDays)}.`, {
-        route,
-        date: departureDate,
-        offsetDays
-      });
+      if (emitCandidateDetail) {
+        emitProgress(onProgress, 'candidate-start', `Trying ${candidateLabel} on ${departureDate}${formatDateShift(offsetDays)}.`, {
+          route,
+          date: departureDate,
+          offsetDays
+        });
+      }
       const candidateDisplayLegs = buildLegsForRoute(route, departureDate);
       const candidateNormalizedLegs = normalizeLegs(candidateDisplayLegs);
       const candidateQuoted = await quoteNormalizedLegs(candidateNormalizedLegs, {
@@ -185,7 +196,8 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
         phase: 'Compare option',
         candidateRoute: candidateLabel,
         providerState,
-        stopOnUnpriced: true
+        stopOnUnpriced: true,
+        progressDetail
       });
       const candidateQuote = normalizeQuote('mixed', candidateQuoted.legs, candidateQuoted.attempts);
       if (!Number.isFinite(candidateQuote.totalAmount)) {
@@ -200,13 +212,15 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
             offsetDays
           }
         }));
-        emitProgress(onProgress, 'candidate-skip', `${candidateLabel} on ${departureDate}: not enough priced legs to compare.`, {
-          route,
-          date: departureDate,
-          pricedLegCount: candidateQuote.pricedLegCount,
-          legCount: candidateQuote.legCount,
-          offsetDays
-        });
+        if (emitCandidateDetail) {
+          emitProgress(onProgress, 'candidate-skip', `${candidateLabel} on ${departureDate}: not enough priced legs to compare.`, {
+            route,
+            date: departureDate,
+            pricedLegCount: candidateQuote.pricedLegCount,
+            legCount: candidateQuote.legCount,
+            offsetDays
+          });
+        }
         continue;
       }
 
@@ -214,7 +228,8 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
         cache: tailQuoteCache,
         onProgress,
         providerState,
-        candidateRoute: candidateLabel
+        candidateRoute: candidateLabel,
+        progressDetail
       });
 
       const candidate = {
@@ -245,6 +260,13 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
         });
       }
     }
+  }
+
+  if (!emitCandidateDetail && skippedCandidates.length > 0) {
+    emitProgress(onProgress, 'compare-skipped', `${skippedCandidates.length} transfer search${skippedCandidates.length === 1 ? '' : 'es'} skipped because prices were incomplete.`, {
+      skippedCount: skippedCandidates.length,
+      reason: 'missing-price'
+    });
   }
 
   const rankedCandidates = [...comparableCandidates]
@@ -409,6 +431,8 @@ function copyStayToReplacement(replacedLegs, replacementLegs) {
 async function recoverMissingPortoReturnLeg(quote, displayLegs, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const providerState = options.providerState || createProviderState();
+  const progressDetail = progressDetailLevel();
+  const emitCandidateDetail = shouldEmitDetailedProgress(progressDetail);
   if (Number.isFinite(quote.totalAmount)) return null;
 
   const missingLeg = quote.legs.find((leg) =>
@@ -431,30 +455,37 @@ async function recoverMissingPortoReturnLeg(quote, displayLegs, options = {}) {
   });
 
   let best = null;
+  let skippedCount = 0;
   for (const route of routes) {
     const candidateLabel = route.join(' -> ');
-    emitProgress(onProgress, 'candidate-start', `Trying fallback ${candidateLabel} on ${missingLeg.departureDate}.`, {
-      route,
-      date: missingLeg.departureDate,
-      fallbackFor: routeLabel(missingLeg)
-    });
+    if (emitCandidateDetail) {
+      emitProgress(onProgress, 'candidate-start', `Trying fallback ${candidateLabel} on ${missingLeg.departureDate}.`, {
+        route,
+        date: missingLeg.departureDate,
+        fallbackFor: routeLabel(missingLeg)
+      });
+    }
     const candidateDisplayLegs = buildLegsForRoute(route, missingLeg.departureDate);
     const candidateQuoted = await quoteNormalizedLegs(normalizeLegs(candidateDisplayLegs), {
       onProgress,
       phase: 'Fallback option',
       candidateRoute: candidateLabel,
       providerState,
-      stopOnUnpriced: true
+      stopOnUnpriced: true,
+      progressDetail
     });
     const candidateQuote = normalizeQuote('mixed', candidateQuoted.legs, candidateQuoted.attempts);
     if (!Number.isFinite(candidateQuote.totalAmount)) {
-      emitProgress(onProgress, 'candidate-skip', `${candidateLabel}: not enough priced legs to replace ${routeLabel(missingLeg)}.`, {
-        route,
-        date: missingLeg.departureDate,
-        pricedLegCount: candidateQuote.pricedLegCount,
-        legCount: candidateQuote.legCount,
-        fallbackFor: routeLabel(missingLeg)
-      });
+      skippedCount += 1;
+      if (emitCandidateDetail) {
+        emitProgress(onProgress, 'candidate-skip', `${candidateLabel}: not enough priced legs to replace ${routeLabel(missingLeg)}.`, {
+          route,
+          date: missingLeg.departureDate,
+          pricedLegCount: candidateQuote.pricedLegCount,
+          legCount: candidateQuote.legCount,
+          fallbackFor: routeLabel(missingLeg)
+        });
+      }
       continue;
     }
 
@@ -474,6 +505,13 @@ async function recoverMissingPortoReturnLeg(quote, displayLegs, options = {}) {
         fallbackFor: routeLabel(missingLeg)
       });
     }
+  }
+
+  if (!emitCandidateDetail && skippedCount > 0) {
+    emitProgress(onProgress, 'fallback-skipped', `${skippedCount} fallback route${skippedCount === 1 ? '' : 's'} skipped because prices were incomplete.`, {
+      skippedCount,
+      fallbackFor: routeLabel(missingLeg)
+    });
   }
 
   if (!best) {
@@ -606,7 +644,8 @@ async function quoteShiftedTailForDateOffset(offsetDays, tailDisplayLegs, option
         phase: offsetDays === 0 ? 'Compare tail' : 'Date-flex tail',
         candidateRoute: options.candidateRoute,
         providerState: options.providerState,
-        stopOnUnpriced: false
+        stopOnUnpriced: false,
+        progressDetail: options.progressDetail
       })
     : { legs: [], attempts: [] };
   const result = {
@@ -738,6 +777,7 @@ async function quoteWithSerpApi(legs) {
 async function quoteLeg(leg, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const providerState = options.providerState || createProviderState();
+  const emitProviderDetail = shouldEmitDetailedProgress(options.progressDetail);
   const providers = isRussianDirection(leg)
     ? [
         ['aviasales', () => quoteLegWithTravelpayouts(leg)],
@@ -753,7 +793,7 @@ async function quoteLeg(leg, options = {}) {
 
   for (const [provider, fn] of providers) {
     const disabledReason = providerDisabledReason(providerState, provider);
-    if (!disabledReason) {
+    if (!disabledReason && emitProviderDetail) {
       emitProgress(onProgress, 'provider-start', `Checking ${providerLabel(provider)} for ${routeLabel(leg)} on ${leg.departureDate}.`, {
         provider,
         route: routeLabel(leg),
@@ -763,13 +803,17 @@ async function quoteLeg(leg, options = {}) {
         russianDirection: isRussianDirection(leg)
       });
     }
-    const result = await tryCachedProvider(provider, leg, fn, { onProgress, skipNetworkReason: disabledReason });
+    const result = await tryCachedProvider(provider, leg, fn, {
+      onProgress,
+      skipNetworkReason: disabledReason,
+      progressDetail: options.progressDetail
+    });
     attempts.push({
       ...result.summary,
       route: `${leg.origin}-${leg.destination}`,
       russianDirection: isRussianDirection(leg)
     });
-    if (!result.summary.skipped || markProviderSkipLogged(providerState, provider)) {
+    if (emitProviderDetail && (!result.summary.skipped || markProviderSkipLogged(providerState, provider))) {
       emitProgress(onProgress, providerProgressStep(result), providerProgressMessage(provider, leg, result), {
         provider,
         route: routeLabel(leg),
@@ -807,11 +851,13 @@ async function tryCachedProvider(provider, leg, fn, options = {}) {
   const cacheKey = legQuoteCacheKey(provider, leg);
   const cachedQuote = getCachedFlightPrice(cacheKey);
   if (cachedQuote) {
-    emitProgress(onProgress, 'cache-hit', `Using SQLite cached ${providerLabel(provider)} result for ${routeLabel(leg)} on ${leg.departureDate}.`, {
-      provider,
-      route: routeLabel(leg),
-      date: leg.departureDate
-    });
+    if (shouldEmitDetailedProgress(options.progressDetail)) {
+      emitProgress(onProgress, 'cache-hit', `Using SQLite cached ${providerLabel(provider)} result for ${routeLabel(leg)} on ${leg.departureDate}.`, {
+        provider,
+        route: routeLabel(leg),
+        date: leg.departureDate
+      });
+    }
     return {
       quote: cloneQuote(cachedQuote),
       summary: { provider, ok: true, cached: true }
@@ -834,6 +880,14 @@ async function tryCachedProvider(provider, leg, fn, options = {}) {
 
 function legQuoteCacheKey(provider, leg) {
   return [provider, leg.origin, leg.destination, leg.departureDate, '1', 'USD'].join('|');
+}
+
+function progressDetailLevel() {
+  return PRICE_COMPARE_PROGRESS_DETAIL === 'verbose' ? 'verbose' : 'compact';
+}
+
+function shouldEmitDetailedProgress(progressDetail) {
+  return progressDetail !== 'compact' && progressDetail !== 'silent';
 }
 
 function emitProgress(onProgress, step, message, details = {}) {

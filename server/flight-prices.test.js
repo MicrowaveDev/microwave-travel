@@ -150,8 +150,8 @@ describe('flight price providers', () => {
     clearFlightPriceCache();
 
     assert.ok(events.some((event) => event.step === 'compare-start'));
-    assert.ok(events.some((event) => event.step === 'candidate-start' && event.message.includes('Dubai -> Doha -> Porto')));
     assert.ok(events.some((event) => event.step === 'candidate-best'));
+    assert.ok(!events.some((event) => event.step === 'leg-start' && event.details?.phase === 'Compare option'));
   });
 
   it('reports missing provider credentials without inventing prices', async () => {
