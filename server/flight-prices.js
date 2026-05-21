@@ -51,6 +51,7 @@ const PORTO_DUBAI_TRANSFER_HUBS = [
 ];
 const PORTO_RETURN_FALLBACK_HUBS = ['Warsaw', 'Madrid', 'Lisbon', 'Barcelona', 'Paris', 'Amsterdam', 'Milan'];
 const POPULAR_ROUTE_SEARCH_DAYS = Number(process.env.POPULAR_ROUTE_SEARCH_DAYS || 4);
+const POPULAR_ROUTE_DATE_FLEX_DAYS = Number(process.env.POPULAR_ROUTE_DATE_FLEX_DAYS || 2);
 const LEG_QUOTE_CACHE_TTL_MS = 60 * 60 * 1000;
 const AVIASALES_SEARCH_BASE_URL = process.env.AVIASALES_SEARCH_BASE_URL || 'https://search.aviasales.com/flights/';
 let amadeusTokenCache = null;
@@ -147,42 +148,24 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   const comparableCandidates = [];
   const skippedCandidates = [];
   const routes = popularTransferRoutes(direction);
-  const allDates = dateWindow(currentSuffix[0].departOn, POPULAR_ROUTE_SEARCH_DAYS);
-  const datePruning = pruneDatesForTailStay(allDates, currentSuffix, originalLegs.slice(endIndex));
-  const dates = datePruning.validDates;
-  if (datePruning.skippedDates.length > 0) {
-    const groupedSkip = buildSkippedRouteOption({
-      route: [direction.from, direction.to],
-      departureDate: datePruning.skippedDates.join(', '),
-      reason: 'stay-time-window',
-      message: datePruning.message,
-      details: datePruning.details
-    });
-    skippedCandidates.push(groupedSkip);
-    emitProgress(onProgress, 'date-window-pruned', datePruning.message, {
-      from: direction.from,
-      to: direction.to,
-      skippedDates: datePruning.skippedDates,
-      validDates: dates,
-      reason: 'stay-time-window',
-      ...datePruning.details
-    });
-  }
+  const dateChoices = popularRouteDateChoices(currentSuffix[0].departOn, startIndex);
+  const tailQuoteCache = new Map();
 
-  emitProgress(onProgress, 'compare-start', `Comparing ${routes.length} ${direction.from} to ${direction.to} route options across ${dates.length} dates.`, {
+  emitProgress(onProgress, 'compare-start', `Comparing ${routes.length} ${direction.from} to ${direction.to} route options across ${dateChoices.length} dates.`, {
     from: direction.from,
     to: direction.to,
     routeCount: routes.length,
-    dateCount: dates.length,
+    dateCount: dateChoices.length,
     currentAmount: currentSuffixQuote
   });
 
   for (const route of routes) {
-    for (const departureDate of dates) {
+    for (const { date: departureDate, offsetDays } of dateChoices) {
       const candidateLabel = route.join(' -> ');
-      emitProgress(onProgress, 'candidate-start', `Trying ${candidateLabel} on ${departureDate}.`, {
+      emitProgress(onProgress, 'candidate-start', `Trying ${candidateLabel} on ${departureDate}${formatDateShift(offsetDays)}.`, {
         route,
-        date: departureDate
+        date: departureDate,
+        offsetDays
       });
       const candidateDisplayLegs = buildLegsForRoute(route, departureDate);
       const candidateNormalizedLegs = normalizeLegs(candidateDisplayLegs);
@@ -202,37 +185,52 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
           message: 'Not enough priced legs to compare.',
           details: {
             pricedLegCount: candidateQuote.pricedLegCount,
-            legCount: candidateQuote.legCount
+            legCount: candidateQuote.legCount,
+            offsetDays
           }
         }));
         emitProgress(onProgress, 'candidate-skip', `${candidateLabel} on ${departureDate}: not enough priced legs to compare.`, {
           route,
           date: departureDate,
           pricedLegCount: candidateQuote.pricedLegCount,
-          legCount: candidateQuote.legCount
+          legCount: candidateQuote.legCount,
+          offsetDays
         });
         continue;
       }
 
+      const tailQuote = await quoteShiftedTailForDateOffset(offsetDays, originalLegs.slice(endIndex), {
+        cache: tailQuoteCache,
+        onProgress,
+        providerState,
+        candidateRoute: candidateLabel
+      });
+
       const candidate = {
         route,
         departureDate,
+        offsetDays,
         displayLegs: candidateDisplayLegs,
-        quote: candidateQuote
+        quote: candidateQuote,
+        tailDisplayLegs: tailQuote.displayLegs,
+        tailQuoteLegs: tailQuote.quoteLegs,
+        tailAttempts: tailQuote.attempts
       };
       comparableCandidates.push(candidate);
       if (!best || candidateQuote.totalAmount < best.quote.totalAmount) {
         best = candidate;
-        emitProgress(onProgress, 'candidate-best', `${candidateLabel} on ${departureDate} is the current best at $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
+        emitProgress(onProgress, 'candidate-best', `${candidateLabel} on ${departureDate}${formatDateShift(offsetDays)} is the current best at $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
           route,
           date: departureDate,
-          totalAmount: candidateQuote.totalAmount
+          totalAmount: candidateQuote.totalAmount,
+          offsetDays
         });
       } else {
-        emitProgress(onProgress, 'candidate-result', `${candidateLabel} on ${departureDate}: $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
+        emitProgress(onProgress, 'candidate-result', `${candidateLabel} on ${departureDate}${formatDateShift(offsetDays)}: $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
           route,
           date: departureDate,
-          totalAmount: candidateQuote.totalAmount
+          totalAmount: candidateQuote.totalAmount,
+          offsetDays
         });
       }
     }
@@ -244,13 +242,11 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
       candidate,
       currentSuffix,
       prefixDisplayLegs: originalLegs.slice(0, startIndex),
-      tailDisplayLegs: originalLegs.slice(endIndex),
+      tailDisplayLegs: candidate.tailDisplayLegs,
       prefixQuoteLegs: initialQuote.legs.filter((quotedLeg) =>
         originalLegs.slice(0, startIndex).some((displayLeg) => sameDisplayLeg(displayLeg, quotedLeg))
       ),
-      tailQuoteLegs: initialQuote.legs.filter((quotedLeg) =>
-        originalLegs.slice(endIndex).some((displayLeg) => sameDisplayLeg(displayLeg, quotedLeg))
-      )
+      tailQuoteLegs: candidate.tailQuoteLegs
     }));
 
   if (!best || (Number.isFinite(currentSuffixQuote) && best.quote.totalAmount >= currentSuffixQuote)) {
@@ -273,17 +269,16 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   }
 
   const prefixDisplayLegs = originalLegs.slice(0, startIndex);
-  const tailDisplayLegs = originalLegs.slice(endIndex);
+  const tailDisplayLegs = best.tailDisplayLegs;
   const prefixQuoteLegs = initialQuote.legs.filter((quotedLeg) =>
     prefixDisplayLegs.some((displayLeg) => sameDisplayLeg(displayLeg, quotedLeg))
   );
-  const tailQuoteLegs = initialQuote.legs.filter((quotedLeg) =>
-    tailDisplayLegs.some((displayLeg) => sameDisplayLeg(displayLeg, quotedLeg))
-  );
+  const tailQuoteLegs = best.tailQuoteLegs;
   const optimizedLegs = [...prefixQuoteLegs, ...best.quote.legs, ...tailQuoteLegs];
   const combinedQuote = normalizeQuote('mixed', optimizedLegs, [
     ...initialQuote.attempts,
-    ...best.quote.attempts.map((attempt) => ({ ...attempt, optimizedCandidate: true }))
+    ...best.quote.attempts.map((attempt) => ({ ...attempt, optimizedCandidate: true })),
+    ...best.tailAttempts.map((attempt) => ({ ...attempt, dateFlexCandidate: best.offsetDays !== 0 }))
   ]);
   combinedQuote.optimizedRouteLegs = [
     ...prefixDisplayLegs,
@@ -292,19 +287,21 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   ];
   combinedQuote.optimizedRouteOptions = rankedCandidates;
   combinedQuote.optimizedRouteSkippedOptions = skippedCandidates;
-  combinedQuote.transferSearchMessage = `Optimized ${direction.from} to ${direction.to} via ${best.route.slice(1, -1).join(' / ') || 'direct'} on ${best.departureDate}.`;
+  combinedQuote.transferSearchMessage = `Optimized ${direction.from} to ${direction.to} via ${best.route.slice(1, -1).join(' / ') || 'direct'} on ${best.departureDate}${formatDateShift(best.offsetDays)}.`;
   combinedQuote.optimization = {
     reason: `Found a cheaper priced ${direction.from} to ${direction.to} option.`,
     replacedRoute: currentSuffix.map((leg) => leg.from).concat(currentSuffix.at(-1).to),
     selectedRoute: best.route,
     departureDate: best.departureDate,
+    dateShiftDays: best.offsetDays,
     previousReturnAmount: currentSuffixQuote,
     selectedReturnAmount: best.quote.totalAmount
   };
   combinedQuote.message = `${combinedQuote.message} ${combinedQuote.transferSearchMessage}`;
-  emitProgress(onProgress, 'compare-complete', `Selected ${best.route.join(' -> ')} on ${best.departureDate} at $${best.quote.totalAmount.toLocaleString()} USD.`, {
+  emitProgress(onProgress, 'compare-complete', `Selected ${best.route.join(' -> ')} on ${best.departureDate}${formatDateShift(best.offsetDays)} at $${best.quote.totalAmount.toLocaleString()} USD.`, {
     selectedRoute: best.route,
     date: best.departureDate,
+    offsetDays: best.offsetDays,
     previousAmount: currentSuffixQuote,
     selectedAmount: best.quote.totalAmount
   });
@@ -339,6 +336,7 @@ function buildOptimizedRouteOption({
   return {
     route: candidate.route,
     departureDate: candidate.departureDate,
+    dateShiftDays: candidate.offsetDays || 0,
     amount: candidate.quote.totalAmount,
     totalAmount: quote.totalAmount,
     pricedLegCount: quote.pricedLegCount,
@@ -585,6 +583,54 @@ function popularTransferRoutes(direction) {
   ];
 }
 
+function popularRouteDateChoices(startDate, startIndex) {
+  if (startIndex !== 0) {
+    return dateWindow(startDate, POPULAR_ROUTE_SEARCH_DAYS).map((date) => ({ date, offsetDays: daysBetween(startDate, date) }));
+  }
+
+  const offsets = [0];
+  for (let days = 1; days <= POPULAR_ROUTE_DATE_FLEX_DAYS; days += 1) {
+    offsets.push(days, -days);
+  }
+  return offsets.map((offsetDays) => ({
+    date: addDaysToDateString(startDate, offsetDays),
+    offsetDays
+  }));
+}
+
+async function quoteShiftedTailForDateOffset(offsetDays, tailDisplayLegs, options = {}) {
+  const cacheKey = String(offsetDays);
+  if (options.cache?.has(cacheKey)) return options.cache.get(cacheKey);
+
+  const displayLegs = shiftDisplayLegDates(tailDisplayLegs, offsetDays);
+  const normalizedLegs = normalizeLegs(displayLegs);
+  const quoted = normalizedLegs.length
+    ? await quoteNormalizedLegs(normalizedLegs, {
+        onProgress: options.onProgress,
+        phase: offsetDays === 0 ? 'Compare tail' : 'Date-flex tail',
+        candidateRoute: options.candidateRoute,
+        providerState: options.providerState,
+        stopOnUnpriced: false
+      })
+    : { legs: [], attempts: [] };
+  const result = {
+    displayLegs,
+    quoteLegs: quoted.legs,
+    attempts: quoted.attempts
+  };
+  options.cache?.set(cacheKey, result);
+  return result;
+}
+
+function shiftDisplayLegDates(legs, offsetDays) {
+  if (!offsetDays) return legs;
+  return legs.map((leg) => ({
+    ...leg,
+    departOn: leg.departOn ? addDaysToDateString(leg.departOn, offsetDays) : leg.departOn,
+    arriveBy: leg.arriveBy ? addDaysToDateString(leg.arriveBy, offsetDays) : leg.arriveBy
+  }));
+}
+
 function quoteTotalForDisplayLegs(displayLegs, quoteLegs) {
   let total = 0;
   for (const displayLeg of displayLegs) {
@@ -607,6 +653,25 @@ function dateWindow(startDate, days) {
     date.setUTCDate(date.getUTCDate() + index);
     return date.toISOString().slice(0, 10);
   });
+}
+
+function daysBetween(startDate, endDate) {
+  const start = new Date(`${startDate}T00:00:00.000Z`);
+  const end = new Date(`${endDate}T00:00:00.000Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+  return Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function addDaysToDateString(date, days) {
+  const value = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(value.getTime())) return date;
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function formatDateShift(offsetDays) {
+  if (!offsetDays) return '';
+  return ` (${offsetDays > 0 ? '+' : ''}${offsetDays}d flex)`;
 }
 
 async function tryProvider(name, fn) {

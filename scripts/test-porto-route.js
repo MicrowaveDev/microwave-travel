@@ -46,9 +46,13 @@ const mockRoutePrices = new Map([
   ['OPO-PAR-2026-05-20', 85],
   ['PAR-DXB-2026-05-20', 456],
   ['DXB-MOW-2026-05-23', 520],
+  ['DXB-MOW-2026-05-24', 520],
   ['MOW-KGD-2026-06-06', 97],
+  ['MOW-KGD-2026-06-07', 97],
   ['GDN-LIS-2026-06-13', 171],
-  ['LIS-OPO-2026-06-13', 62]
+  ['LIS-OPO-2026-06-13', 62],
+  ['GDN-LIS-2026-06-14', 171],
+  ['LIS-OPO-2026-06-14', 62]
 ]);
 
 const originalEnv = {
@@ -111,15 +115,18 @@ function installMockProviders() {
 
 function assertMockScenario(quote) {
   const selectedRoute = quote.optimization?.selectedRoute?.join(' -> ');
-  if (selectedRoute !== 'Porto -> Athens -> Dubai') {
-    throw new Error(`Expected Athens transfer in mock scenario, got ${selectedRoute || 'none'}.`);
+  if (selectedRoute !== 'Porto -> Madrid -> Dubai') {
+    throw new Error(`Expected Madrid transfer in mock scenario, got ${selectedRoute || 'none'}.`);
   }
-  if (quote.totalAmount !== 1197) {
-    throw new Error(`Expected mock total $1,197 USD, got ${formatMoney(quote.totalAmount)}.`);
+  if (quote.optimization?.dateShiftDays !== 1) {
+    throw new Error(`Expected +1 day date-flex transfer, got ${quote.optimization?.dateShiftDays ?? 'none'}.`);
   }
-  const skippedWindow = quote.optimizedRouteSkippedOptions?.find((option) => option.reason === 'stay-time-window');
-  if (!skippedWindow?.details?.skippedDates?.includes('2026-05-21')) {
-    throw new Error('Expected later dates to be pruned for stay-time.');
+  if (quote.totalAmount !== 1127) {
+    throw new Error(`Expected mock total $1,127 USD, got ${formatMoney(quote.totalAmount)}.`);
+  }
+  const shiftedMoscowLeg = quote.optimizedRouteLegs?.find((leg) => leg.from === 'Dubai' && leg.to === 'Moscow');
+  if (shiftedMoscowLeg?.departOn !== '2026-05-24') {
+    throw new Error(`Expected downstream legs to shift one day, got Dubai -> Moscow on ${shiftedMoscowLeg?.departOn || 'missing'}.`);
   }
 }
 

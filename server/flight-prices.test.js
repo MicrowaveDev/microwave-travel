@@ -400,8 +400,11 @@ describe('flight price providers', () => {
       ['OPO-ATH-2026-05-20', 110],
       ['ATH-DXB-2026-05-20', 237],
       ['DXB-MOW-2026-05-23', 520],
+      ['DXB-MOW-2026-05-24', 520],
       ['MOW-KGD-2026-06-06', 97],
-      ['GDN-OPO-2026-06-13', 249]
+      ['MOW-KGD-2026-06-07', 97],
+      ['GDN-OPO-2026-06-13', 249],
+      ['GDN-OPO-2026-06-14', 249]
     ]);
     const events = [];
     globalThis.fetch = async (url) => {
@@ -437,22 +440,19 @@ describe('flight price providers', () => {
     restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
     clearFlightPriceCache();
 
-    assert.equal(quote.totalAmount, 1213);
-    assert.deepEqual(quote.optimization.selectedRoute, ['Porto', 'Athens', 'Dubai']);
+    assert.equal(quote.totalAmount, 1143);
+    assert.deepEqual(quote.optimization.selectedRoute, ['Porto', 'Madrid', 'Dubai']);
+    assert.equal(quote.optimization.dateShiftDays, 1);
     assert.equal(quote.optimizedRouteLegs[1].to, 'Dubai');
     assert.equal(quote.optimizedRouteLegs[1].stayDaysAfter, 3);
     assert.equal(quote.optimizedRouteLegs[2].from, 'Dubai');
-    assert.equal(quote.optimizedRouteLegs[2].departOn, '2026-05-23');
+    assert.equal(quote.optimizedRouteLegs[2].departOn, '2026-05-24');
     assert.deepEqual(quote.optimizedRouteOptions.slice(0, 2).map((option) => option.route), [
-      ['Porto', 'Athens', 'Dubai'],
-      ['Porto', 'Barcelona', 'Dubai']
+      ['Porto', 'Madrid', 'Dubai'],
+      ['Porto', 'Athens', 'Dubai']
     ]);
-    assert.equal(quote.optimizedRouteOptions.some((option) => option.departureDate === '2026-05-21'), false);
-    const skippedDateWindow = quote.optimizedRouteSkippedOptions.find((option) => option.reason === 'stay-time-window');
-    assert.deepEqual(skippedDateWindow.details.skippedDates, ['2026-05-21', '2026-05-22', '2026-05-23']);
-    assert.equal(skippedDateWindow.details.latestArrivalDate, '2026-05-20');
-    assert.equal(skippedDateWindow.details.nextDepartureDate, '2026-05-23');
-    assert.ok(events.some((event) => event.step === 'date-window-pruned' && event.details?.reason === 'stay-time-window'));
+    assert.equal(quote.optimizedRouteOptions[0].dateShiftDays, 1);
+    assert.ok(events.some((event) => event.step === 'candidate-best' && event.details?.offsetDays === 1));
   });
 
   it('keeps skipped transfer candidates when no valid Porto to Dubai transfer is fully priced', async () => {
@@ -494,7 +494,6 @@ describe('flight price providers', () => {
     assert.equal(quote.optimization, undefined);
     assert.equal(quote.optimizedRouteOptions.length, 0);
     assert.ok(quote.optimizedRouteSkippedOptions.some((option) => option.reason === 'missing-price'));
-    assert.ok(quote.optimizedRouteSkippedOptions.some((option) => option.reason === 'stay-time-window'));
     assert.match(quote.message, /No complete priced transfer route/);
   });
 

@@ -467,6 +467,11 @@ function transferOptionAmount(option) {
   return typeof option.amount === 'number' ? `$${option.amount.toLocaleString()}` : 'Partial';
 }
 
+function transferOptionDate(option) {
+  const shift = Number(option.dateShiftDays) || 0;
+  return `${option.departureDate}${shift ? ` (${shift > 0 ? '+' : ''}${shift}d)` : ''}`;
+}
+
 function transferSkipReason(option) {
   if (option.message) return option.message;
   if (option.reason === 'stay-time') return 'Does not preserve required stay time.';
@@ -763,7 +768,7 @@ optimize();
         >
           <span>{{ transferOptionLabel(option) }}</span>
           <strong>{{ transferOptionAmount(option) }}</strong>
-          <small>Transfer · {{ option.departureDate }}</small>
+          <small>Transfer · {{ transferOptionDate(option) }}</small>
         </button>
       </div>
       <details v-if="transferSkippedOptions.length" class="transfer-skipped-details">
