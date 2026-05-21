@@ -8,55 +8,43 @@ import {
 import {
   clearCachedFlightPrices,
   closeFlightPriceCache,
-  getCachedFlightPrice,
-  getCachedFlightPrices,
   getCachedPriceBundle,
   getCachedRouteAnalysis,
-  getDisabledProviderReasons,
-  setCachedFlightPrice,
   setCachedPriceBundle,
-  setCachedRouteAnalysis,
-  setDisabledProviderReason
+  setCachedRouteAnalysis
 } from './flight-price-cache.js';
-import { airlineInfoForCarrier } from './airlines.js';
 import { rankTransferRoutes } from './route-intelligence.js';
-import { isRussianDirection, sameCityName, toIataCode } from './iata-codes.js';
-import { configuredProviders, providerLabel } from './flight-prices/provider-labels.js';
+import { sameCityName, toIataCode } from './iata-codes.js';
 import {
   cacheableLeg,
   cloneQuote,
   markQuoteBundleFromCache,
   markQuoteFromCache,
-  sortForStableJson,
   stableCacheKey
 } from './flight-prices/cache-keys.js';
-import { withNormalizedBaggage } from './flight-prices/baggage-from-offer.js';
 import {
-  quoteLegWithSerpApi,
-  quoteLegWithTravelpayouts,
-  quoteLegWithYandexRasp,
-  tryProvider
-} from './flight-prices/providers.js';
-import { addBookingLinks } from './flight-prices/booking-links.js';
+  emitProgress,
+  progressDetailLevel,
+  routeLabel,
+  shouldEmitDetailedProgress
+} from './flight-prices/progress.js';
+import { createProviderState } from './flight-prices/provider-state.js';
+import {
+  PORTO_RETURN_FALLBACK_HUBS,
+  findPopularRouteTarget,
+  isReplaceablePopularRoute,
+  popularTransferRoutes
+} from './flight-prices/popular-hubs.js';
+import { addHoursToDate, formatStayDays, roundMoney } from './flight-prices/money.js';
+import { normalizeQuote } from './flight-prices/quote-normalize.js';
+import { quoteLeg } from './flight-prices/leg-quoter.js';
+import {
+  buildSkippedRouteOption,
+  compactRouteOptions,
+  formatCandidatePrice,
+  formatStayFlex
+} from './flight-prices/route-options.js';
 
-const PORTO_DUBAI_TRANSFER_HUBS = [
-  'Doha',
-  'Istanbul',
-  'Lisbon',
-  'Madrid',
-  'Barcelona',
-  'Milan',
-  'Rome',
-  'Paris',
-  'Frankfurt',
-  'Warsaw',
-  'Belgrade',
-  'Athens',
-  'Vienna',
-  'Zurich',
-  'Amsterdam'
-];
-const PORTO_RETURN_FALLBACK_HUBS = ['Warsaw', 'Madrid', 'Lisbon', 'Barcelona', 'Paris', 'Amsterdam', 'Milan'];
 const POPULAR_ROUTE_SEARCH_DAYS = Number(process.env.POPULAR_ROUTE_SEARCH_DAYS || 4);
 const POPULAR_ROUTE_DATE_FLEX_DAYS = Number(process.env.POPULAR_ROUTE_DATE_FLEX_DAYS || 2);
 const POPULAR_ROUTE_STAY_FLEX_DAYS = Number(process.env.POPULAR_ROUTE_STAY_FLEX_DAYS || 1);
@@ -64,7 +52,6 @@ const PRICE_COMPARE_PROGRESS_DETAIL = process.env.PRICE_COMPARE_PROGRESS_DETAIL 
 const LEG_QUOTE_CACHE_TTL_MS = 60 * 60 * 1000;
 const PRICE_ROUTE_ANALYSIS_CACHE_TTL_MS = Number(process.env.PRICE_ROUTE_ANALYSIS_CACHE_TTL_MS || LEG_QUOTE_CACHE_TTL_MS);
 const PRICE_BUNDLE_CACHE_TTL_MS = Number(process.env.PRICE_BUNDLE_CACHE_TTL_MS || LEG_QUOTE_CACHE_TTL_MS);
-const PROVIDER_DISABLE_CACHE_TTL_MS = Number(process.env.PROVIDER_DISABLE_CACHE_TTL_MS || 30 * 60 * 1000);
 const AVIASALES_SEARCH_BASE_URL = process.env.AVIASALES_SEARCH_BASE_URL || 'https://search.aviasales.com/flights/';
 
 export async function quoteFlightPrices(input, options = {}) {
@@ -449,16 +436,6 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   return combinedQuote;
 }
 
-function buildSkippedRouteOption({ route, departureDate, reason, message, details = {} }) {
-  return {
-    route,
-    departureDate,
-    reason,
-    message,
-    details
-  };
-}
-
 function normalizePriceRequirements(requirements) {
   if (!Array.isArray(requirements)) return [];
   return requirements
@@ -552,16 +529,6 @@ function stayFlexDayChoices(replacedLegs, tailLegs) {
   if (!staySource?.stayHoursAfter || tailLegs.length === 0) return [0];
   const maxStayFlexDays = Math.max(0, Math.floor(POPULAR_ROUTE_STAY_FLEX_DAYS));
   return Array.from({ length: maxStayFlexDays + 1 }, (_, days) => days);
-}
-
-function formatStayFlex(stayFlexDays, city) {
-  return stayFlexDays ? `, +${stayFlexDays}d in ${city}` : '';
-}
-
-function formatCandidatePrice(option) {
-  if (Number.isFinite(option?.totalAmount)) return `$${option.totalAmount.toLocaleString()} USD total`;
-  if (Number.isFinite(option?.amount)) return `$${option.amount.toLocaleString()} USD transfer`;
-  return 'partial price';
 }
 
 function pruneDatesForTailStay(dates, replacedLegs, tailLegs) {
@@ -799,48 +766,6 @@ function sameQuoteLeg(left, right) {
   return left.from === right.from && left.to === right.to && left.departureDate === right.departureDate;
 }
 
-function findPopularRouteTarget(legs) {
-  const candidates = [
-    ...findPopularRouteTargetsForDirection(legs, { from: 'Porto', to: 'Dubai' }),
-    ...findPopularRouteTargetsForDirection(legs, { from: 'Dubai', to: 'Porto' })
-  ];
-  candidates.sort((a, b) => a.startIndex - b.startIndex || a.endIndex - b.endIndex);
-  return candidates[0] || null;
-}
-
-function findPopularRouteTargetsForDirection(legs, direction) {
-  const candidates = [];
-  for (let startIndex = 0; startIndex < legs.length; startIndex += 1) {
-    if (legs[startIndex].from !== direction.from) continue;
-    for (let endIndex = startIndex; endIndex < legs.length; endIndex += 1) {
-      if (legs[endIndex].to !== direction.to) continue;
-      const segment = legs.slice(startIndex, endIndex + 1);
-      if (isReplaceablePopularRoute(segment, direction)) {
-        candidates.push({ startIndex, endIndex: endIndex + 1, direction });
-        break;
-      }
-    }
-  }
-  return candidates;
-}
-
-function isReplaceablePopularRoute(legs, direction) {
-  const cities = new Set(legs.flatMap((leg) => [leg.from, leg.to]));
-  for (const city of cities) {
-    if (![direction.from, direction.to, ...PORTO_DUBAI_TRANSFER_HUBS].includes(city)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function popularTransferRoutes(direction) {
-  return [
-    [direction.from, direction.to],
-    ...PORTO_DUBAI_TRANSFER_HUBS.map((hub) => [direction.from, hub, direction.to])
-  ];
-}
-
 async function quoteShiftedTailForDateOffset(offsetDays, tailDisplayLegs, options = {}) {
   const cacheKey = String(offsetDays);
   if (options.cache?.has(cacheKey)) return options.cache.get(cacheKey);
@@ -880,185 +805,6 @@ function quoteTotalForDisplayLegs(displayLegs, quoteLegs) {
 
 function sameDisplayLeg(displayLeg, quotedLeg) {
   return displayLeg.from === quotedLeg.from && displayLeg.to === quotedLeg.to && displayLeg.departOn === quotedLeg.departureDate;
-}
-
-async function quoteLeg(leg, options = {}) {
-  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
-  const providerState = options.providerState || createProviderState();
-  const emitProviderDetail = shouldEmitDetailedProgress(options.progressDetail);
-  const providers = isRussianDirection(leg)
-    ? [
-        ['aviasales', () => quoteLegWithTravelpayouts(leg)],
-        ['yandex-rasp', () => quoteLegWithYandexRasp(leg)],
-        ['serpapi', () => quoteLegWithSerpApi(leg)]
-      ]
-    : [
-        ['serpapi', () => quoteLegWithSerpApi(leg)],
-        ['aviasales', () => quoteLegWithTravelpayouts(leg)]
-  ];
-  const attempts = [];
-  let bestNoPriceResult = null;
-  const providerCache = getCachedFlightPrices(providers.map(([provider]) => legQuoteCacheKey(provider, leg)));
-
-  for (const [provider, fn] of providers) {
-    const disabledReason = providerDisabledReason(providerState, provider);
-    if (!disabledReason && emitProviderDetail) {
-      emitProgress(onProgress, 'provider-start', `Checking ${providerLabel(provider)} for ${routeLabel(leg)} on ${leg.departureDate}.`, {
-        provider,
-        route: routeLabel(leg),
-        date: leg.departureDate,
-        phase: options.phase,
-        candidateRoute: options.candidateRoute || null,
-        russianDirection: isRussianDirection(leg)
-      });
-    }
-    const result = await tryCachedProvider(provider, leg, fn, {
-      onProgress,
-      skipNetworkReason: disabledReason,
-      progressDetail: options.progressDetail,
-      cachedQuote: providerCache.get(legQuoteCacheKey(provider, leg)) || null
-    });
-    attempts.push({
-      ...result.summary,
-      route: `${leg.origin}-${leg.destination}`,
-      russianDirection: isRussianDirection(leg)
-    });
-    if (emitProviderDetail && (!result.summary.skipped || markProviderSkipLogged(providerState, provider))) {
-      emitProgress(onProgress, providerProgressStep(result), providerProgressMessage(provider, leg, result), {
-        provider,
-        route: routeLabel(leg),
-        date: leg.departureDate,
-        amount: result.quote?.amount || null,
-        cached: result.summary.cached === true,
-        skipped: result.summary.skipped === true,
-        error: result.summary.error || result.quote?.error || null,
-        phase: options.phase,
-        candidateRoute: options.candidateRoute || null
-      });
-    }
-    if (!result.summary.ok && shouldDisableProvider(provider, result.summary.error) && disableProvider(providerState, provider, result.summary.error)) {
-      setDisabledProviderReason(provider, result.summary.error, Date.now() + PROVIDER_DISABLE_CACHE_TTL_MS);
-      emitProgress(onProgress, 'provider-disabled', `${providerLabel(provider)} will be skipped for the rest of this search: ${result.summary.error}.`, {
-        provider,
-        reason: result.summary.error
-      });
-    }
-    if (result.quote) {
-      if (Number.isFinite(result.quote.amount) || result.quote.schedule) {
-        return { leg: result.quote, attempts };
-      }
-      bestNoPriceResult = result.quote;
-    }
-  }
-
-  return {
-    leg: bestNoPriceResult || { ...leg, amount: null, currency: 'USD', provider: null, error: 'No provider returned a price for this leg.' },
-    attempts
-  };
-}
-
-async function tryCachedProvider(provider, leg, fn, options = {}) {
-  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
-  const cacheKey = legQuoteCacheKey(provider, leg);
-  const cachedQuote = options.cachedQuote || getCachedFlightPrice(cacheKey);
-  if (cachedQuote) {
-    if (shouldEmitDetailedProgress(options.progressDetail)) {
-      emitProgress(onProgress, 'cache-hit', `Using SQLite cached ${providerLabel(provider)} result for ${routeLabel(leg)} on ${leg.departureDate}.`, {
-        provider,
-        route: routeLabel(leg),
-        date: leg.departureDate
-      });
-    }
-    return {
-      quote: withNormalizedBaggage(cloneQuote(cachedQuote)),
-      summary: { provider, ok: true, cached: true }
-    };
-  }
-
-  if (options.skipNetworkReason) {
-    return {
-      quote: null,
-      summary: { provider, ok: false, skipped: true, error: options.skipNetworkReason }
-    };
-  }
-
-  const result = await tryProvider(provider, fn);
-  if (result.quote) {
-    result.quote = withNormalizedBaggage(result.quote);
-    setCachedFlightPrice(cacheKey, provider, leg, cloneQuote(result.quote), Date.now() + LEG_QUOTE_CACHE_TTL_MS);
-  }
-  return result;
-}
-
-function legQuoteCacheKey(provider, leg) {
-  return [provider, leg.origin, leg.destination, leg.departureDate, leg.passengers || 1, 'USD'].join('|');
-}
-
-function progressDetailLevel() {
-  return PRICE_COMPARE_PROGRESS_DETAIL === 'verbose' ? 'verbose' : 'compact';
-}
-
-function shouldEmitDetailedProgress(progressDetail) {
-  return progressDetail !== 'compact' && progressDetail !== 'silent';
-}
-
-function emitProgress(onProgress, step, message, details = {}) {
-  onProgress({
-    step,
-    message,
-    details,
-    at: new Date().toISOString()
-  });
-}
-
-function routeLabel(leg) {
-  return `${leg.from} -> ${leg.to}`;
-}
-
-function providerProgressMessage(provider, leg, result) {
-  const label = providerLabel(provider);
-  if (result.summary.skipped) return `Skipping ${label} for ${routeLabel(leg)}: ${result.summary.error}.`;
-  if (!result.summary.ok) return `${label} failed for ${routeLabel(leg)}: ${result.summary.error}.`;
-  if (result.summary.cached) return `${label} SQLite cache hit for ${routeLabel(leg)}.`;
-  if (Number.isFinite(result.quote?.amount)) return `${label} found ${routeLabel(leg)} for $${result.quote.amount.toLocaleString()} USD.`;
-  if (result.quote?.schedule) return `${label} found schedule data for ${routeLabel(leg)}, but no USD fare.`;
-  return `${label} returned no USD price for ${routeLabel(leg)}.`;
-}
-
-function providerProgressStep(result) {
-  if (result.summary.skipped) return 'provider-skipped';
-  return result.summary.ok ? 'provider-complete' : 'provider-failed';
-}
-
-function createProviderState() {
-  return {
-    disabledProviders: getDisabledProviderReasons(),
-    loggedSkippedProviders: new Set()
-  };
-}
-
-function providerDisabledReason(providerState, provider) {
-  return providerState.disabledProviders.get(provider) || null;
-}
-
-function disableProvider(providerState, provider, reason) {
-  if (providerState.disabledProviders.has(provider)) return false;
-  providerState.disabledProviders.set(provider, reason);
-  return true;
-}
-
-function markProviderSkipLogged(providerState, provider) {
-  if (providerState.loggedSkippedProviders.has(provider)) return false;
-  providerState.loggedSkippedProviders.add(provider);
-  return true;
-}
-
-function shouldDisableProvider(provider, errorMessage = '') {
-  if (!errorMessage) return false;
-  if (provider === 'serpapi') {
-    return /run out of searches|quota|rate limit|too many requests|429/i.test(errorMessage);
-  }
-  return /rate limit|too many requests|429/i.test(errorMessage);
 }
 
 function routeAnalysisCacheKey({ legs, requirements, passengers }) {
@@ -1102,69 +848,6 @@ function priceCacheConfig() {
   };
 }
 
-function compactRouteOptions(options) {
-  const completeKeys = new Set(options
-    .filter((option) => Number.isFinite(option.totalAmount))
-    .map(routeOptionCompactKey));
-  const partialRouteCounts = new Map();
-  const compacted = [];
-  for (const option of options) {
-    const key = routeOptionCompactKey(option);
-    if (!Number.isFinite(option.totalAmount) && completeKeys.has(key)) continue;
-    if (!Number.isFinite(option.totalAmount)) {
-      const routeKey = option.route.join(' -> ');
-      const count = partialRouteCounts.get(routeKey) || 0;
-      if (count >= 2) continue;
-      partialRouteCounts.set(routeKey, count + 1);
-    }
-    compacted.push(option);
-  }
-  return compacted.slice(0, 40);
-}
-
-function routeOptionCompactKey(option) {
-  return [
-    option.route.join(' -> '),
-    option.departureDate,
-    option.dateShiftDays || 0,
-    option.stayFlexDays || 0,
-    option.amount || ''
-  ].join('|');
-}
-
-function normalizeQuote(provider, legs, attempts = []) {
-  const normalizedInputLegs = legs.map((leg) => withNormalizedAirline(withNormalizedBaggage(leg)));
-  const priced = normalizedInputLegs.filter((leg) => Number.isFinite(leg.amount));
-  const activeProviders = [...new Set(normalizedInputLegs.map((leg) => leg.provider).filter(Boolean))];
-  const normalizedLegs = addBookingLinks(normalizedInputLegs.map((leg) => ({
-    ...leg,
-    amount: Number.isFinite(leg.amount) ? roundMoney(leg.amount) : null
-  })));
-  return {
-    provider,
-    currency: 'USD',
-    totalAmount: priced.length === legs.length ? roundMoney(priced.reduce((sum, leg) => sum + leg.amount, 0)) : null,
-    pricedLegCount: priced.length,
-    legCount: legs.length,
-    legs: normalizedLegs,
-    attempts,
-    message:
-      priced.length === legs.length
-        ? `${providerLabel(activeProviders.join(', ') || provider)} returned all flight leg prices in USD.`
-        : priced.length > 0
-          ? `${providerLabel(activeProviders.join(', ') || provider)} returned ${priced.length} of ${legs.length} leg prices in USD.`
-          : configuredProviders().length
-            ? 'Configured providers did not return USD prices for this route.'
-            : 'No flight price provider is configured. Add provider keys to the server environment.'
-  };
-}
-
-function withNormalizedAirline(leg) {
-  if (!leg || leg.mode === 'bus' || leg.airline || !leg.carrier) return leg;
-  const airline = airlineInfoForCarrier(leg.carrier);
-  return airline ? { ...leg, airline } : leg;
-}
-
 function normalizeLegs(legs, passengers = 1) {
   const passengerCount = normalizePassengerCount(passengers);
   return Array.isArray(legs)
@@ -1186,15 +869,3 @@ function normalizePassengerCount(value) {
   return Math.min(9, Math.max(1, count));
 }
 
-function addHoursToDate(date, hours) {
-  return new Date(date.getTime() + hours * 60 * 60 * 1000);
-}
-
-function formatStayDays(days) {
-  const rounded = Math.round(days * 10) / 10;
-  return `${rounded} day${rounded === 1 ? '' : 's'}`;
-}
-
-function roundMoney(value) {
-  return Math.round(value * 100) / 100;
-}
