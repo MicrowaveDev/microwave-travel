@@ -359,7 +359,7 @@ async function fetchPrices(routePlan = plan.value) {
     const response = await fetch('/api/prices/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ legs: routePlan.legs }),
+      body: JSON.stringify({ legs: routePlan.legs, requirements: routePlan.requirements || buildRequirements() }),
       signal: pricingAbortController.signal
     });
     if (!response.ok) throw new Error('Could not fetch flight prices.');

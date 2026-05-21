@@ -109,6 +109,8 @@ Expected behavior:
 
 - Popular transfer search must consider nearby departure dates, currently controlled by `POPULAR_ROUTE_DATE_FLEX_DAYS`.
 - Default date flex is plus/minus 2 days.
+- For leading transfer replacements into a stop with a `before` requirement, pricing must receive the route requirements and extend positive date-flex choices through the latest valid arrival date before that requirement.
+- Extended visit-before date search must still use route-intelligence pruning so low-priority routes do not receive unnecessary live checks across the whole window.
 - When a shifted transfer candidate is selected, shift downstream itinerary dates by the same number of days.
 - Stay durations must remain intact after shifting dates.
 - Shifted options should show their date offset, for example `2026-05-22 (+2d)`.

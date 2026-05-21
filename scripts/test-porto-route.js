@@ -69,7 +69,7 @@ try {
   const plan = optimizeTrip(tripInput);
   const progress = [];
   const quote = await quoteFlightPrices(
-    { legs: plan.legs },
+    { legs: plan.legs, requirements: plan.requirements },
     { onProgress: (event) => progress.push(event) }
   );
   if (!useLiveProviders) assertMockScenario(quote);

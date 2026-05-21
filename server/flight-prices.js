@@ -74,6 +74,7 @@ export async function quoteFlightPrices(input, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const providerState = createProviderState();
   const legs = normalizeLegs(input.legs);
+  const requirements = normalizePriceRequirements(input.requirements);
   if (legs.length === 0) {
     throw new Error('Optimize a route before fetching prices.');
   }
@@ -83,7 +84,7 @@ export async function quoteFlightPrices(input, options = {}) {
   });
   const quoted = await quoteNormalizedLegs(legs, { onProgress, phase: 'Current route', providerState });
   const quote = normalizeQuote('mixed', quoted.legs, quoted.attempts);
-  const optimized = await optimizePopularTransferRoute(input.legs, quote, { onProgress, providerState });
+  const optimized = await optimizePopularTransferRoute(input.legs, quote, { onProgress, providerState, requirements });
   const recovered = await recoverMissingPortoReturnLeg(
     optimized || quote,
     optimized?.optimizedRouteLegs || input.legs,
@@ -154,6 +155,7 @@ async function quoteNormalizedLegs(legs, options = {}) {
 async function optimizePopularTransferRoute(originalLegs, initialQuote, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const providerState = options.providerState || createProviderState();
+  const requirements = Array.isArray(options.requirements) ? options.requirements : [];
   if (!Array.isArray(originalLegs)) return null;
 
   const optimizationTarget = findPopularRouteTarget(originalLegs);
@@ -176,7 +178,10 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
     currentSuffix[0].departOn,
     startIndex,
     POPULAR_ROUTE_SEARCH_DAYS,
-    POPULAR_ROUTE_DATE_FLEX_DAYS
+    POPULAR_ROUTE_DATE_FLEX_DAYS,
+    {
+      latestBeforeDate: findBeforeRequirementDate(requirements, direction.to)
+    }
   );
   const tailQuoteCache = new Map();
 
@@ -216,6 +221,21 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
         });
       }
       const candidateDisplayLegs = buildLegsForRoute(route, departureDate);
+      const candidateArrival = candidateDisplayLegs.at(-1)?.arriveBy;
+      if (!satisfiesBeforeRequirement(candidateArrival, requirements, direction.to)) {
+        skippedCandidates.push(buildSkippedRouteOption({
+          route,
+          departureDate,
+          reason: 'date-constraint',
+          message: `${direction.to} would miss the visit-before date.`,
+          details: {
+            arrivalDate: candidateArrival || null,
+            requiredBefore: findBeforeRequirementDate(requirements, direction.to),
+            offsetDays
+          }
+        }));
+        continue;
+      }
       const candidateNormalizedLegs = normalizeLegs(candidateDisplayLegs);
       const candidateQuoted = await quoteNormalizedLegs(candidateNormalizedLegs, {
         onProgress,
@@ -375,6 +395,38 @@ function buildSkippedRouteOption({ route, departureDate, reason, message, detail
     message,
     details
   };
+}
+
+function normalizePriceRequirements(requirements) {
+  if (!Array.isArray(requirements)) return [];
+  return requirements
+    .map((requirement) => ({
+      city: String(requirement.city || '').trim(),
+      type: requirement.type === 'after' || requirement.type === 'departBefore' ? requirement.type : 'before',
+      date: parseIsoDate(requirement.date)
+    }))
+    .filter((requirement) => requirement.city && requirement.date);
+}
+
+function findBeforeRequirementDate(requirements, city) {
+  const requirement = requirements.find((entry) => sameCityName(entry.city, city) && entry.type === 'before');
+  return requirement?.date || null;
+}
+
+function satisfiesBeforeRequirement(arrivalDate, requirements, city) {
+  const beforeDate = findBeforeRequirementDate(requirements, city);
+  if (!beforeDate) return true;
+  const arrival = parseIsoDate(arrivalDate);
+  return Boolean(arrival && arrival < beforeDate);
+}
+
+function parseIsoDate(value) {
+  const date = String(value || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+}
+
+function sameCityName(left, right) {
+  return String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase();
 }
 
 function buildOptimizedRouteOption({

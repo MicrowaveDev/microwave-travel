@@ -455,6 +455,76 @@ describe('flight price providers', () => {
     assert.ok(events.some((event) => event.step === 'candidate-best' && event.details?.offsetDays === 1));
   });
 
+  it('searches leading transfer dates through the destination visit-before window', async () => {
+    clearFlightPriceCache();
+    const originalSerpApiKey = process.env.SERPAPI_KEY;
+    const originalTravelpayoutsToken = process.env.TRAVELPAYOUTS_TOKEN;
+    const originalYandexKey = process.env.YANDEX_RASP_API_KEY;
+    const originalFetch = globalThis.fetch;
+    process.env.SERPAPI_KEY = 'test-serpapi-key';
+    delete process.env.TRAVELPAYOUTS_TOKEN;
+    delete process.env.YANDEX_RASP_API_KEY;
+
+    const routePrices = new Map([
+      ['OPO-DXB-2026-05-20', 426],
+      ['OPO-MAD-2026-05-21', 23],
+      ['MAD-DXB-2026-05-21', 254],
+      ['OPO-MAD-2026-05-25', 35],
+      ['MAD-DXB-2026-05-25', 165],
+      ['DXB-MOW-2026-05-21', 536],
+      ['DXB-MOW-2026-05-26', 520],
+      ['MOW-LED-2026-05-24', 65],
+      ['MOW-LED-2026-05-29', 35],
+      ['LED-KGD-2026-05-31', 45],
+      ['LED-KGD-2026-06-05', 72],
+      ['GDN-OPO-2026-06-08', 249],
+      ['GDN-OPO-2026-06-13', 249]
+    ]);
+    const events = [];
+    globalThis.fetch = async (url) => {
+      const params = new URL(url).searchParams;
+      const route = [
+        params.get('departure_id'),
+        params.get('arrival_id'),
+        params.get('outbound_date')
+      ].join('-');
+      const price = routePrices.get(route);
+      return Response.json({
+        best_flights: price ? [{ price, flights: [{ airline: 'Test Air' }] }] : [],
+        search_metadata: { id: `search-${route}` }
+      });
+    };
+
+    const quote = await quoteFlightPrices(
+      {
+        requirements: [{ city: 'Dubai', type: 'before', date: '2026-05-29' }],
+        legs: [
+          { from: 'Porto', to: 'Dubai', departOn: '2026-05-20', arriveBy: '2026-05-20', mode: 'flight', stayHoursAfter: 24, stayDaysAfter: 1 },
+          { from: 'Dubai', to: 'Moscow', departOn: '2026-05-21', mode: 'flight' },
+          { from: 'Moscow', to: 'Saint Petersburg', departOn: '2026-05-24', mode: 'flight' },
+          { from: 'Saint Petersburg', to: 'Kaliningrad', departOn: '2026-05-31', mode: 'flight' },
+          { from: 'Kaliningrad', to: 'Gdansk', departOn: '2026-06-07', mode: 'bus' },
+          { from: 'Gdansk', to: 'Porto', departOn: '2026-06-08', mode: 'flight' }
+        ]
+      },
+      { onProgress: (event) => events.push(event) }
+    );
+
+    globalThis.fetch = originalFetch;
+    restoreEnv('SERPAPI_KEY', originalSerpApiKey);
+    restoreEnv('TRAVELPAYOUTS_TOKEN', originalTravelpayoutsToken);
+    restoreEnv('YANDEX_RASP_API_KEY', originalYandexKey);
+    clearFlightPriceCache();
+
+    assert.equal(quote.totalAmount, 1076);
+    assert.deepEqual(quote.optimization.selectedRoute, ['Porto', 'Madrid', 'Dubai']);
+    assert.equal(quote.optimization.departureDate, '2026-05-25');
+    assert.equal(quote.optimization.dateShiftDays, 5);
+    assert.equal(quote.optimizedRouteLegs[2].from, 'Dubai');
+    assert.equal(quote.optimizedRouteLegs[2].departOn, '2026-05-26');
+    assert.ok(events.some((event) => event.step === 'compare-start' && event.details?.dateCount === 11));
+  });
+
   it('keeps skipped transfer candidates when no valid Porto to Dubai transfer is fully priced', async () => {
     clearFlightPriceCache();
     const originalSerpApiKey = process.env.SERPAPI_KEY;

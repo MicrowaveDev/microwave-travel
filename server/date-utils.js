@@ -25,7 +25,7 @@ export function formatDateShift(offsetDays) {
   return ` (${offsetDays > 0 ? '+' : ''}${offsetDays}d flex)`;
 }
 
-export function popularRouteDateChoices(startDate, startIndex, searchDays, flexDays) {
+export function popularRouteDateChoices(startDate, startIndex, searchDays, flexDays, options = {}) {
   if (startIndex !== 0) {
     return dateWindow(startDate, searchDays).map((date) => ({ date, offsetDays: daysBetween(startDate, date) }));
   }
@@ -33,6 +33,10 @@ export function popularRouteDateChoices(startDate, startIndex, searchDays, flexD
   const offsets = [0];
   for (let days = 1; days <= flexDays; days += 1) {
     offsets.push(days, -days);
+  }
+  const deadlineOffset = options.latestBeforeDate ? daysBetween(startDate, addDaysToDateString(options.latestBeforeDate, -1)) : 0;
+  for (let days = flexDays + 1; days <= deadlineOffset; days += 1) {
+    offsets.push(days);
   }
   return offsets.map((offsetDays) => ({
     date: addDaysToDateString(startDate, offsetDays),

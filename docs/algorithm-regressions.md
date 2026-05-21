@@ -94,3 +94,66 @@ When adding any new city that belongs to a special routing category, update the 
 - Provider-specific Russian direction detection.
 
 Avoid hardcoded single-city checks for category rules. Prefer named sets or tables that make future additions visible.
+
+## 2026-05-21: Visit-Before Slack Was Not Used For Leading Transfer Price Search
+
+### Scenario
+
+Route input included:
+
+- Origin/return: Porto.
+- Stops: Dubai 1 day, Moscow 3 days, Saint Petersburg 7 days, Kaliningrad 7 days.
+- Dubai visit-before date: 2026-05-29.
+- Trip start: 2026-05-20.
+- Locked stop order.
+
+### Symptom
+
+Pricing selected a Porto to Dubai transfer on 2026-05-22 and reported it as the optimized option. The log said:
+
+```text
+Comparing 16 Porto to Dubai route options across 5 dates.
+```
+
+That meant the app only checked the default leading date-flex window around 2026-05-20, not the whole valid window through the Dubai before-2026-05-29 constraint.
+
+### Triggering Change
+
+Date-flex transfer search had been added as a fixed plus/minus window. Later visit-before constraints were displayed and validated in route optimization, but those requirements were not sent to the price-search endpoint.
+
+### Root Cause
+
+The frontend called `/api/prices/stream` with only route legs:
+
+```js
+body: JSON.stringify({ legs: routePlan.legs })
+```
+
+`quoteFlightPrices()` therefore could not know that Dubai was allowed later than the original 2026-05-20 route date. `popularRouteDateChoices()` only used `POPULAR_ROUTE_DATE_FLEX_DAYS`, so it produced five dates: original, plus/minus one day, and plus/minus two days.
+
+### User-Visible Impact
+
+- The UI implied the 2026-05-22 transfer was the best found option.
+- Later valid dates before 2026-05-29 were not checked, so a cheaper ticket could be missed.
+- The copied log did not make clear that the visit-before slack had not been used.
+
+### Fix
+
+- Send route requirements to `/api/prices/stream`.
+- Normalize requirements inside pricing.
+- For leading transfer replacements into a destination with a `before` rule, extend positive date choices through the latest valid date before the deadline.
+- Reject candidate arrivals that would miss the destination `before` requirement.
+- Keep route-intelligence pruning so lower-priority routes do not receive full-window live checks.
+
+### Regression Coverage
+
+Added coverage:
+
+- `tests/unit/date-utils.test.js`: `extends leading date-flex choices through a visit-before window`
+- `server/flight-prices.test.js`: `searches leading transfer dates through the destination visit-before window`
+
+The pricing regression test proves a cheaper 2026-05-25 Porto to Dubai transfer can beat the default-window 2026-05-21 option when Dubai is allowed before 2026-05-29.
+
+### Future Guardrail
+
+When pricing logic depends on route-level constraints, confirm those constraints are passed from the optimizer response into the pricing request. Logs should make the resulting search window visible with `dateCount`, selected date, and skipped date-constraint diagnostics.
