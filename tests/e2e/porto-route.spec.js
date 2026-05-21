@@ -8,6 +8,7 @@ const tripState = {
     { id: 'kaliningrad', city: 'Kaliningrad', visitBefore: '', stayDays: 7 }
   ],
   startDate: '2026-05-20',
+  passengers: 1,
   lockOrder: false
 };
 
@@ -21,6 +22,7 @@ test('prices the Porto route with date-flex transfer options', async ({ page }) 
   await page.goto('/');
 
   await expect(page.getByText('Pricing result')).toBeVisible();
+  await expect(page.getByLabel('Passengers')).toHaveValue('1');
   await expect(page.getByText('Optimized Porto to Dubai via Madrid on 2026-05-21 (+1d flex).')).toBeVisible();
   await expect(page.getByText('Porto to Madrid')).toBeVisible();
   await expect(page.getByText('Madrid to Dubai')).toBeVisible();
@@ -30,6 +32,11 @@ test('prices the Porto route with date-flex transfer options', async ({ page }) 
   await expect(page.getByRole('link', { name: 'Pegasus Airlines (PC)' })).toHaveAttribute('href', 'https://www.flypgs.com/');
   await expect(page.getByText('Bags: Small cabin bag included; checked bag costs extra.')).toBeVisible();
   await expect(page.getByText('Bags: Cabin bag included; checked baggage depends on fare.')).toBeVisible();
+  const transferSearchUrl = await page.getByRole('link', { name: 'Search transfer route' }).first().getAttribute('href');
+  const transferSearchParams = new URL(transferSearchUrl);
+  expect(transferSearchParams.searchParams.get('segments[0][origin_iata]')).toBe('OPO');
+  expect(transferSearchParams.searchParams.get('segments[1][destination_iata]')).toBe('DXB');
+  expect(transferSearchParams.searchParams.get('adults')).toBe('1');
   await expect(page.getByText('Stay 3 days in Dubai')).toBeVisible();
   await expect(page.locator('.summary-strip > div', { hasText: 'Price' }).getByText('$1,127', { exact: true })).toBeVisible();
 

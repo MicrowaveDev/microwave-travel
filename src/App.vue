@@ -29,6 +29,7 @@ const origin = ref(initialTripState.origin);
 const stops = ref(initialTripState.stops);
 const startDate = ref(initialTripState.startDate);
 const lockOrder = ref(initialTripState.lockOrder);
+const passengers = ref(initialTripState.passengers);
 const loading = ref(false);
 const pricingLoading = ref(false);
 const error = ref('');
@@ -114,6 +115,7 @@ function defaultTripState() {
       createStop('Doha', '', 1)
     ],
     startDate: '2026-05-20',
+    passengers: 1,
     lockOrder: false
   };
 }
@@ -127,6 +129,7 @@ function loadTripState() {
       origin: typeof stored.origin === 'string' && stored.origin.trim() ? stored.origin : 'Porto',
       stops: storedStops.length ? storedStops : defaultTripState().stops,
       startDate: typeof stored.startDate === 'string' && stored.startDate ? stored.startDate : '2026-05-20',
+      passengers: normalizePassengerCountInput(stored.passengers),
       lockOrder: stored.lockOrder === true
     };
   } catch {
@@ -153,6 +156,11 @@ function normalizeStayDaysInput(value) {
   return Number.isFinite(days) && days >= 0 ? Math.round(days * 10) / 10 : 0;
 }
 
+function normalizePassengerCountInput(value) {
+  const count = Number(value);
+  return Number.isInteger(count) && count >= 1 && count <= 9 ? count : 1;
+}
+
 function saveTripState() {
   localStorage.setItem(TRIP_STATE_STORAGE_KEY, JSON.stringify({
     origin: origin.value,
@@ -163,6 +171,7 @@ function saveTripState() {
       stayDays: normalizeStayDaysInput(stop.stayDays)
     })),
     startDate: startDate.value,
+    passengers: normalizePassengerCountInput(passengers.value),
     lockOrder: lockOrder.value
   }));
 }
@@ -195,6 +204,7 @@ function snapshotTripInput() {
   return {
     origin: origin.value,
     startDate: startDate.value,
+    passengers: normalizePassengerCountInput(passengers.value),
     lockOrder: lockOrder.value,
     stops: stops.value.map((stop, index) => ({
       id: stop.id,
@@ -223,6 +233,9 @@ function describeTripInputChanges(previous, next) {
   }
   if (previous.startDate !== next.startDate) {
     changes.push(`Trip start changed from ${previous.startDate || 'empty'} to ${next.startDate || 'empty'}.`);
+  }
+  if (previous.passengers !== next.passengers) {
+    changes.push(`Passengers changed from ${previous.passengers || 1} to ${next.passengers || 1}.`);
   }
   if (previous.lockOrder !== next.lockOrder) {
     changes.push(`Lock-order setting changed to ${next.lockOrder ? 'enabled' : 'disabled'}.`);
@@ -359,7 +372,11 @@ async function fetchPrices(routePlan = plan.value) {
     const response = await fetch('/api/prices/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ legs: routePlan.legs, requirements: routePlan.requirements || buildRequirements() }),
+      body: JSON.stringify({
+        legs: routePlan.legs,
+        requirements: routePlan.requirements || buildRequirements(),
+        passengers: normalizePassengerCountInput(passengers.value)
+      }),
       signal: pricingAbortController.signal
     });
     if (!response.ok) throw new Error('Could not fetch flight prices.');
@@ -544,6 +561,7 @@ function buildPricingLog() {
     `Stops: ${stops.value.map((stop) => `${stop.city} (${Number(stop.stayDays) || 0}d)`).join(' -> ')}`,
     `Visit-before dates: ${buildRequirements().map((item) => `${item.city} before ${item.date}`).join('; ') || 'none'}`,
     `Start date: ${startDate.value}`,
+    `Passengers: ${normalizePassengerCountInput(passengers.value)}`,
     `Lock order: ${lockOrder.value ? 'yes' : 'no'}`,
     '',
     `Input change events (${inputChangeLog.value.length}):`,
@@ -688,7 +706,7 @@ function activePriceLeg(index) {
 }
 
 watch(
-  [origin, stops, startDate, lockOrder],
+  [origin, stops, startDate, passengers, lockOrder],
   () => {
     trackTripInputChanges();
     saveTripState();
@@ -752,6 +770,10 @@ optimize();
         <label>
           Trip start
           <input v-model="startDate" type="date" />
+        </label>
+        <label>
+          Passengers
+          <input v-model.number="passengers" min="1" max="9" step="1" type="number" />
         </label>
       </div>
 

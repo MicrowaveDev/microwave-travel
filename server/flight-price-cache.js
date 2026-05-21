@@ -54,7 +54,7 @@ export function setCachedFlightPrice(cacheKey, provider, leg, quote, expiresAt) 
       leg.destination,
       leg.departureDate,
       'USD',
-      1,
+      Number(leg.passengers) || 1,
       JSON.stringify(quote),
       expiresAt,
       Date.now()

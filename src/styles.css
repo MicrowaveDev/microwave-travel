@@ -99,7 +99,7 @@ input:disabled {
 
 .field-row {
   display: grid;
-  grid-template-columns: minmax(130px, 1fr);
+  grid-template-columns: minmax(130px, 1fr) minmax(96px, 0.55fr);
   gap: 10px;
 }
 

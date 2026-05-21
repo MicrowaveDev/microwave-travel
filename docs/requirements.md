@@ -17,6 +17,7 @@ A user enters:
 - Days to spend in each stop.
 - Visit-before constraints.
 - Trip start date.
+- Passenger count, defaulting to one adult passenger.
 
 The app returns:
 
@@ -56,6 +57,7 @@ Expected behavior:
 - The user can add, remove, and reorder stops.
 - Each stop can include a visit-before date and a stay duration in days.
 - The user can choose whether to keep stop order locked.
+- The user can set the number of passengers from 1 to 9.
 - Inputs are saved locally so page reloads preserve the last trip.
 
 ### Route Optimization
@@ -135,6 +137,8 @@ Expected behavior:
 - Single-leg search links remain a fallback when there is no connected transfer group.
 - If `TRAVELPAYOUTS_MARKER` is configured, links should include the affiliate marker.
 - Booking links are search/affiliate links, not guaranteed discounts.
+- Transfer booking links must use Aviasales multi-city segment parameters so they open the whole transfer route, not just the first leg.
+- Booking links must pass the selected passenger count as the shared adult passenger parameter.
 - The UI must not imply that an unpriced leg has a confirmed fare.
 
 ### Logs And Diagnostics

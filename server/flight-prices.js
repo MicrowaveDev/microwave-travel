@@ -68,13 +68,14 @@ const POPULAR_ROUTE_SEARCH_DAYS = Number(process.env.POPULAR_ROUTE_SEARCH_DAYS |
 const POPULAR_ROUTE_DATE_FLEX_DAYS = Number(process.env.POPULAR_ROUTE_DATE_FLEX_DAYS || 2);
 const PRICE_COMPARE_PROGRESS_DETAIL = process.env.PRICE_COMPARE_PROGRESS_DETAIL || 'compact';
 const LEG_QUOTE_CACHE_TTL_MS = 60 * 60 * 1000;
-const AVIASALES_SEARCH_BASE_URL = process.env.AVIASALES_SEARCH_BASE_URL || 'https://www.aviasales.com/search/';
+const AVIASALES_SEARCH_BASE_URL = process.env.AVIASALES_SEARCH_BASE_URL || 'https://search.aviasales.com/flights/';
 let amadeusTokenCache = null;
 
 export async function quoteFlightPrices(input, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const providerState = createProviderState();
-  const legs = normalizeLegs(input.legs);
+  const passengers = normalizePassengerCount(input.passengers);
+  const legs = normalizeLegs(input.legs, passengers);
   const requirements = normalizePriceRequirements(input.requirements);
   if (legs.length === 0) {
     throw new Error('Optimize a route before fetching prices.');
@@ -157,6 +158,7 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
   const providerState = options.providerState || createProviderState();
   const requirements = Array.isArray(options.requirements) ? options.requirements : [];
+  const passengers = initialQuote.legs?.find((leg) => Number.isFinite(leg.passengers))?.passengers || 1;
   if (!Array.isArray(originalLegs)) return null;
 
   const optimizationTarget = findPopularRouteTarget(originalLegs);
@@ -237,7 +239,7 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
         }));
         continue;
       }
-      const candidateNormalizedLegs = normalizeLegs(candidateDisplayLegs);
+      const candidateNormalizedLegs = normalizeLegs(candidateDisplayLegs, passengers);
       const candidateQuoted = await quoteNormalizedLegs(candidateNormalizedLegs, {
         onProgress,
         phase: 'Compare option',
@@ -276,7 +278,8 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
         onProgress,
         providerState,
         candidateRoute: candidateLabel,
-        progressDetail
+        progressDetail,
+        passengers
       });
 
       const candidate = {
@@ -556,7 +559,7 @@ async function recoverMissingPortoReturnLeg(quote, displayLegs, options = {}) {
       });
     }
     const candidateDisplayLegs = buildLegsForRoute(route, missingLeg.departureDate);
-    const candidateQuoted = await quoteNormalizedLegs(normalizeLegs(candidateDisplayLegs), {
+    const candidateQuoted = await quoteNormalizedLegs(normalizeLegs(candidateDisplayLegs, missingLeg.passengers || 1), {
       onProgress,
       phase: 'Fallback option',
       candidateRoute: candidateLabel,
@@ -747,7 +750,7 @@ async function quoteShiftedTailForDateOffset(offsetDays, tailDisplayLegs, option
   if (options.cache?.has(cacheKey)) return options.cache.get(cacheKey);
 
   const displayLegs = shiftDisplayLegDates(tailDisplayLegs, offsetDays);
-  const normalizedLegs = normalizeLegs(displayLegs);
+  const normalizedLegs = normalizeLegs(displayLegs, options.passengers || 1);
   const quoted = normalizedLegs.length
     ? await quoteNormalizedLegs(normalizedLegs, {
         onProgress: options.onProgress,
@@ -808,7 +811,7 @@ async function quoteWithAmadeus(legs) {
       originLocationCode: leg.origin,
       destinationLocationCode: leg.destination,
       departureDate: leg.departureDate,
-      adults: '1',
+      adults: String(leg.passengers || 1),
       currencyCode: 'USD',
       max: '1'
     });
@@ -850,7 +853,7 @@ async function quoteWithSerpApi(legs) {
       arrival_id: leg.destination,
       outbound_date: leg.departureDate,
       currency: 'USD',
-      adults: '1',
+      adults: String(leg.passengers || 1),
       sort_by: '2',
       api_key: process.env.SERPAPI_KEY
     });
@@ -993,7 +996,7 @@ async function tryCachedProvider(provider, leg, fn, options = {}) {
 }
 
 function legQuoteCacheKey(provider, leg) {
-  return [provider, leg.origin, leg.destination, leg.departureDate, '1', 'USD'].join('|');
+  return [provider, leg.origin, leg.destination, leg.departureDate, leg.passengers || 1, 'USD'].join('|');
 }
 
 function progressDetailLevel() {
@@ -1077,7 +1080,7 @@ async function quoteLegWithSerpApi(leg) {
     arrival_id: leg.destination,
     outbound_date: leg.departureDate,
     currency: 'USD',
-    adults: '1',
+    adults: String(leg.passengers || 1),
     sort_by: '2',
     api_key: process.env.SERPAPI_KEY
   });
@@ -1397,27 +1400,32 @@ function contiguousFlightGroups(legs) {
 function buildAviasalesSearchUrlForLegs(legs) {
   try {
     const url = new URL(AVIASALES_SEARCH_BASE_URL);
-    const searchPath = legs.map((leg) =>
-      `${leg.origin}${formatAviasalesPathDate(leg.departureDate)}${leg.destination}1`
-    ).join('');
-    url.pathname = `${url.pathname.replace(/\/?$/, '/')}${searchPath}`;
-    url.search = new URLSearchParams({
-      adults: '1',
+    const params = new URLSearchParams({
+      adults: String(normalizePassengerCount(legs.find((leg) => leg.passengers)?.passengers)),
       children: '0',
       infants: '0',
       trip_class: '0',
       currency: 'USD',
       locale: 'en',
       ...(process.env.TRAVELPAYOUTS_MARKER ? { marker: process.env.TRAVELPAYOUTS_MARKER } : {})
-    }).toString();
+    });
+    if (legs.length === 1) {
+      params.set('origin_iata', legs[0].origin);
+      params.set('destination_iata', legs[0].destination);
+      params.set('depart_date', legs[0].departureDate);
+      params.set('oneway', '1');
+    } else {
+      legs.forEach((leg, index) => {
+        params.set(`segments[${index}][origin_iata]`, leg.origin);
+        params.set(`segments[${index}][destination_iata]`, leg.destination);
+        params.set(`segments[${index}][depart_date]`, leg.departureDate);
+      });
+    }
+    url.search = params.toString();
     return url.toString();
   } catch {
     return null;
   }
-}
-
-function formatAviasalesPathDate(date) {
-  return `${date.slice(8, 10)}${date.slice(5, 7)}`;
 }
 
 function configuredProviders() {
@@ -1442,7 +1450,8 @@ function providerLabel(provider) {
     .join(', ');
 }
 
-function normalizeLegs(legs) {
+function normalizeLegs(legs, passengers = 1) {
+  const passengerCount = normalizePassengerCount(passengers);
   return Array.isArray(legs)
     ? legs.map((leg) => ({
         from: leg.from,
@@ -1450,9 +1459,16 @@ function normalizeLegs(legs) {
         mode: leg.mode || 'flight',
         origin: toIataCode(leg.from),
         destination: toIataCode(leg.to),
-        departureDate: leg.departOn || leg.departureDate || leg.arriveBy
+        departureDate: leg.departOn || leg.departureDate || leg.arriveBy,
+        passengers: normalizePassengerCount(leg.passengers || passengerCount)
       })).filter((leg) => leg.mode !== 'bus')
     : [];
+}
+
+function normalizePassengerCount(value) {
+  const count = Number(value);
+  if (!Number.isInteger(count)) return 1;
+  return Math.min(9, Math.max(1, count));
 }
 
 function isRussianDirection(leg) {

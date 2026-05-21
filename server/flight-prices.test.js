@@ -275,7 +275,8 @@ describe('flight price providers', () => {
         legs: [
           { from: 'Porto', to: 'Lisbon', departOn: '2026-05-20', mode: 'flight' },
           { from: 'Lisbon', to: 'Paris', departOn: '2026-05-21', mode: 'flight' }
-        ]
+        ],
+        passengers: 2
       },
       { onProgress: (event) => events.push(event) }
     );
@@ -288,10 +289,23 @@ describe('flight price providers', () => {
     clearFlightPriceCache();
 
     assert.equal(quote.totalAmount, 246);
-    assert.equal(new URL(quote.legs[0].bookingUrl).searchParams.get('marker'), 'partner123');
-    assert.match(new URL(quote.legs[0].bookingUrl).pathname, /\/search\/OPO2005LIS1$/);
+    const singleLegUrl = new URL(quote.legs[0].bookingUrl);
+    assert.equal(singleLegUrl.hostname, 'search.aviasales.com');
+    assert.equal(singleLegUrl.searchParams.get('origin_iata'), 'OPO');
+    assert.equal(singleLegUrl.searchParams.get('destination_iata'), 'LIS');
+    assert.equal(singleLegUrl.searchParams.get('depart_date'), '2026-05-20');
+    assert.equal(singleLegUrl.searchParams.get('adults'), '2');
+    assert.equal(singleLegUrl.searchParams.get('marker'), 'partner123');
     assert.equal(quote.legs[0].bookingLabel, 'Affiliate search link');
-    assert.match(new URL(quote.legs[0].bookingGroupUrl).pathname, /\/search\/OPO2005LIS1LIS2105PAR1$/);
+    const groupUrl = new URL(quote.legs[0].bookingGroupUrl);
+    assert.equal(groupUrl.hostname, 'search.aviasales.com');
+    assert.equal(groupUrl.searchParams.get('segments[0][origin_iata]'), 'OPO');
+    assert.equal(groupUrl.searchParams.get('segments[0][destination_iata]'), 'LIS');
+    assert.equal(groupUrl.searchParams.get('segments[0][depart_date]'), '2026-05-20');
+    assert.equal(groupUrl.searchParams.get('segments[1][origin_iata]'), 'LIS');
+    assert.equal(groupUrl.searchParams.get('segments[1][destination_iata]'), 'PAR');
+    assert.equal(groupUrl.searchParams.get('segments[1][depart_date]'), '2026-05-21');
+    assert.equal(groupUrl.searchParams.get('adults'), '2');
     assert.equal(quote.legs[0].bookingGroupLabel, 'Search transfer route');
     assert.equal(quote.legs[1].bookingGroupUrl, quote.legs[0].bookingGroupUrl);
     assert.equal(serpApiCalls, 1);
