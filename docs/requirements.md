@@ -132,6 +132,8 @@ Expected behavior:
 ### Logs And Diagnostics
 
 - The price panel should show a concise pricing status.
+- While pricing is still running, the displayed itinerary and price summary should update to the current best fully comparable transfer or fallback option when a new best candidate is found.
+- Interim best-route updates must be replaced by better candidates or by the final quote once pricing completes.
 - The user can expand/collapse recent progress logs.
 - The user can copy a full price-search log.
 - Copied logs should include trip input, displayed route, price result, provider attempts, priced legs, optimized options, skipped options, and progress events.

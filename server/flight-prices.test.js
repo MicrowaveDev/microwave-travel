@@ -523,6 +523,10 @@ describe('flight price providers', () => {
     assert.equal(quote.optimizedRouteLegs[2].from, 'Dubai');
     assert.equal(quote.optimizedRouteLegs[2].departOn, '2026-05-26');
     assert.ok(events.some((event) => event.step === 'compare-start' && event.details?.dateCount === 11));
+    assert.ok(events.some((event) =>
+      event.step === 'candidate-best' &&
+      event.details?.previewOption?.routeLegs?.some((leg) => leg.from === 'Dubai' && leg.departOn === '2026-05-26')
+    ));
   });
 
   it('keeps skipped transfer candidates when no valid Porto to Dubai transfer is fully priced', async () => {
@@ -609,6 +613,10 @@ describe('flight price providers', () => {
     assert.deepEqual(quote.fallback.selectedRoute, ['Gdansk', 'Warsaw', 'Porto']);
     assert.deepEqual(quote.optimizedRouteLegs.map((leg) => `${leg.from}-${leg.to}`), ['Gdansk-Warsaw', 'Warsaw-Porto']);
     assert.ok(events.some((event) => event.step === 'fallback-start'));
+    assert.ok(events.some((event) =>
+      event.step === 'candidate-best' &&
+      event.details?.previewQuote?.optimizedRouteLegs?.map((leg) => `${leg.from}-${leg.to}`).join('|') === 'Gdansk-Warsaw|Warsaw-Porto'
+    ));
     assert.ok(events.some((event) => event.step === 'fallback-complete'));
   });
 });

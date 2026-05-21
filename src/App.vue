@@ -409,6 +409,7 @@ async function readPriceStream(response, requestId) {
       const event = JSON.parse(line);
       if (event.type === 'progress') {
         appendPriceProgress(event.event);
+        applyPriceProgressPreview(event.event);
       } else if (event.type === 'result') {
         finalQuote = event.quote;
       } else if (event.type === 'error') {
@@ -424,6 +425,35 @@ async function readPriceStream(response, requestId) {
 
 function appendPriceProgress(event) {
   priceProgress.value = [...priceProgress.value, event];
+}
+
+function applyPriceProgressPreview(event) {
+  const details = event?.details || {};
+  if (details.previewQuote) {
+    priceQuote.value = details.previewQuote;
+    selectedTransferOptionIndex.value = 0;
+    if (details.previewQuote.optimizedRouteLegs?.length) {
+      applyRouteLegs(details.previewQuote.optimizedRouteLegs);
+    }
+    return;
+  }
+
+  if (!details.previewOption?.routeLegs?.length) return;
+  const option = details.previewOption;
+  priceQuote.value = {
+    provider: 'mixed',
+    currency: 'USD',
+    totalAmount: option.totalAmount,
+    pricedLegCount: option.pricedLegCount,
+    legCount: option.legCount,
+    message: `Current best transfer: ${option.route.join(' -> ')} on ${option.departureDate}.`,
+    legs: option.legs || [],
+    attempts: priceQuote.value?.attempts || [],
+    optimizedRouteOptions: [option],
+    optimizedRouteSkippedOptions: priceQuote.value?.optimizedRouteSkippedOptions || []
+  };
+  selectedTransferOptionIndex.value = 0;
+  applyRouteLegs(option.routeLegs);
 }
 
 function providerAttemptKey(attempt) {

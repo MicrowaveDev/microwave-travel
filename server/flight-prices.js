@@ -288,6 +288,16 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
         tailQuoteLegs: tailQuote.quoteLegs,
         tailAttempts: tailQuote.attempts
       };
+      const previewOption = buildOptimizedRouteOption({
+        candidate,
+        currentSuffix,
+        prefixDisplayLegs: originalLegs.slice(0, startIndex),
+        tailDisplayLegs: candidate.tailDisplayLegs,
+        prefixQuoteLegs: initialQuote.legs.filter((quotedLeg) =>
+          originalLegs.slice(0, startIndex).some((displayLeg) => sameDisplayLeg(displayLeg, quotedLeg))
+        ),
+        tailQuoteLegs: candidate.tailQuoteLegs
+      });
       comparableCandidates.push(candidate);
       if (!best || candidateQuote.totalAmount < best.quote.totalAmount) {
         best = candidate;
@@ -295,7 +305,8 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
           route,
           date: departureDate,
           totalAmount: candidateQuote.totalAmount,
-          offsetDays
+          offsetDays,
+          previewOption
         });
       } else {
         emitProgress(onProgress, 'candidate-result', `${candidateLabel} on ${departureDate}${formatDateShift(offsetDays)}: $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
@@ -569,11 +580,13 @@ async function recoverMissingPortoReturnLeg(quote, displayLegs, options = {}) {
 
     if (!best || candidateQuote.totalAmount < best.quote.totalAmount) {
       best = { route, displayLegs: candidateDisplayLegs, quote: candidateQuote };
+      const previewQuote = buildFallbackPreviewQuote(quote, displayLegs, missingLeg, candidateDisplayLegs, candidateQuote.legs);
       emitProgress(onProgress, 'candidate-best', `${candidateLabel} is the current best fallback at $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
         route,
         date: missingLeg.departureDate,
         totalAmount: candidateQuote.totalAmount,
-        fallbackFor: routeLabel(missingLeg)
+        fallbackFor: routeLabel(missingLeg),
+        previewQuote
       });
     } else {
       emitProgress(onProgress, 'candidate-result', `${candidateLabel}: $${candidateQuote.totalAmount.toLocaleString()} USD.`, {
@@ -636,6 +649,24 @@ async function recoverMissingPortoReturnLeg(quote, displayLegs, options = {}) {
     fallbackFor: routeLabel(missingLeg)
   });
   return combinedQuote;
+}
+
+function buildFallbackPreviewQuote(quote, displayLegs, missingLeg, replacementDisplayLegs, replacementQuoteLegs) {
+  const remainingQuoteLegs = quote.legs.filter((leg) => !sameQuoteLeg(leg, missingLeg));
+  const preview = normalizeQuote('mixed', [...remainingQuoteLegs, ...replacementQuoteLegs], quote.attempts || []);
+  preview.optimizedRouteLegs = replaceDisplayLeg(Array.isArray(displayLegs) ? displayLegs : [], missingLeg, replacementDisplayLegs);
+  if (Array.isArray(quote.optimizedRouteOptions)) {
+    preview.optimizedRouteOptions = quote.optimizedRouteOptions.map((option) =>
+      replaceMissingLegInRouteOption(option, missingLeg, replacementDisplayLegs, replacementQuoteLegs)
+    );
+  }
+  if (Array.isArray(quote.optimizedRouteSkippedOptions)) {
+    preview.optimizedRouteSkippedOptions = quote.optimizedRouteSkippedOptions;
+  }
+  if (quote.optimization) preview.optimization = quote.optimization;
+  if (quote.transferSearchMessage) preview.transferSearchMessage = quote.transferSearchMessage;
+  preview.message = `Current best fallback: ${replacementDisplayLegs.map((leg) => leg.from).concat(replacementDisplayLegs.at(-1)?.to || []).join(' -> ')}.`;
+  return preview;
 }
 
 function replaceMissingLegInRouteOption(option, missingLeg, replacementDisplayLegs, replacementQuoteLegs) {
