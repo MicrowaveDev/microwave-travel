@@ -11,6 +11,7 @@ import {
   getCachedFlightPrice,
   setCachedFlightPrice
 } from './flight-price-cache.js';
+import { rankTransferRoutes } from './route-intelligence.js';
 
 const CITY_IATA_CODES = new Map([
   ['porto', 'OPO'],
@@ -160,7 +161,9 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
   let best = null;
   const comparableCandidates = [];
   const skippedCandidates = [];
-  const routes = popularTransferRoutes(direction);
+  const routeRanking = rankTransferRoutes(popularTransferRoutes(direction), currentSuffix[0].departOn);
+  const routes = routeRanking.rankedRoutes;
+  const flexLimitedRoutes = new Set(routeRanking.skippedRoutes.map((entry) => entry.route.join(' -> ')));
   const progressDetail = progressDetailLevel();
   const emitCandidateDetail = shouldEmitDetailedProgress(progressDetail);
   const dateChoices = popularRouteDateChoices(
@@ -175,13 +178,30 @@ async function optimizePopularTransferRoute(originalLegs, initialQuote, options 
     from: direction.from,
     to: direction.to,
     routeCount: routes.length,
+    flexLimitedRouteCount: routeRanking.skippedRoutes.length,
     dateCount: dateChoices.length,
     currentAmount: currentSuffixQuote
   });
 
+  if (routeRanking.skippedRoutes.length > 0) {
+    emitProgress(onProgress, 'compare-pruned', `${routeRanking.skippedRoutes.length} low-priority transfer route${routeRanking.skippedRoutes.length === 1 ? '' : 's'} will only check the primary date before live date-flex pricing.`, {
+      flexLimitedRouteCount: routeRanking.skippedRoutes.length
+    });
+  }
+
   for (const route of routes) {
     for (const { date: departureDate, offsetDays } of dateChoices) {
       const candidateLabel = route.join(' -> ');
+      if (offsetDays !== 0 && flexLimitedRoutes.has(candidateLabel)) {
+        skippedCandidates.push(buildSkippedRouteOption({
+          route,
+          departureDate,
+          reason: 'route-intelligence',
+          message: 'Skipped date-flex check for a lower-priority transfer route.',
+          details: { offsetDays }
+        }));
+        continue;
+      }
       if (emitCandidateDetail) {
         emitProgress(onProgress, 'candidate-start', `Trying ${candidateLabel} on ${departureDate}${formatDateShift(offsetDays)}.`, {
           route,
