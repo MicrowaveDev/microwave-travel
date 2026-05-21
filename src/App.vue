@@ -1,6 +1,20 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import LegCard from './LegCard.vue';
+import {
+  createStop,
+  loadTripState,
+  saveTripState as persistTripState,
+  normalizePassengerCountInput
+} from './lib/trip-state.js';
+import {
+  snapshotTripInput as snapshotTripInputFrom,
+  describeTripInputChanges
+} from './lib/trip-input-changes.js';
+import {
+  buildPricingLog as buildPricingLogText,
+  copyLogWithFallback
+} from './lib/pricing-log.js';
 
 const cityOptions = [
   'Porto',
@@ -24,7 +38,6 @@ const cityOptions = [
   'Zurich',
   'Amsterdam'
 ];
-const TRIP_STATE_STORAGE_KEY = 'microwave-travel:trip-state:v1';
 const initialTripState = loadTripState();
 const origin = ref(initialTripState.origin);
 const stops = ref(initialTripState.stops);
@@ -95,86 +108,14 @@ const providerAttemptBadges = computed(() => {
   return [...grouped.values()];
 });
 
-function createStop(city = 'Doha', visitBefore = '', stayDays = 0) {
-  return {
-    id: crypto.randomUUID(),
-    city,
-    visitBefore,
-    stayDays
-  };
-}
-
-function defaultTripState() {
-  return {
-    origin: 'Porto',
-    stops: [
-      createStop('Doha', '', 1),
-      createStop('Dubai', '2026-06-01', 2),
-      createStop('Kaliningrad', '', 2),
-      createStop('Moscow', '', 2),
-      createStop('Dubai', '', 2),
-      createStop('Doha', '', 1)
-    ],
-    startDate: '2026-05-20',
-    passengers: 1,
-    lockOrder: false
-  };
-}
-
-function loadTripState() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(TRIP_STATE_STORAGE_KEY) || 'null');
-    if (!stored || typeof stored !== 'object') return defaultTripState();
-    const storedStops = Array.isArray(stored.stops) ? stored.stops.map(normalizeStoredStop).filter(Boolean) : [];
-    return {
-      origin: typeof stored.origin === 'string' && stored.origin.trim() ? stored.origin : 'Porto',
-      stops: storedStops.length ? storedStops : defaultTripState().stops,
-      startDate: typeof stored.startDate === 'string' && stored.startDate ? stored.startDate : '2026-05-20',
-      passengers: normalizePassengerCountInput(stored.passengers),
-      lockOrder: stored.lockOrder === true
-    };
-  } catch {
-    return defaultTripState();
-  }
-}
-
-function normalizeStoredStop(stop) {
-  if (!stop || typeof stop !== 'object') return null;
-  const city = typeof stop.city === 'string' && stop.city.trim() ? stop.city : 'Doha';
-  const visitBefore = typeof stop.visitBefore === 'string'
-    ? stop.visitBefore
-    : stop.rule === 'before' && typeof stop.date === 'string'
-      ? stop.date
-      : '';
-  return {
-    ...createStop(city, visitBefore, normalizeStayDaysInput(stop.stayDays)),
-    id: typeof stop.id === 'string' && stop.id ? stop.id : crypto.randomUUID()
-  };
-}
-
-function normalizeStayDaysInput(value) {
-  const days = Number(value);
-  return Number.isFinite(days) && days >= 0 ? Math.round(days * 10) / 10 : 0;
-}
-
-function normalizePassengerCountInput(value) {
-  const count = Number(value);
-  return Number.isInteger(count) && count >= 1 && count <= 9 ? count : 1;
-}
-
 function saveTripState() {
-  localStorage.setItem(TRIP_STATE_STORAGE_KEY, JSON.stringify({
+  persistTripState({
     origin: origin.value,
-    stops: stops.value.map((stop) => ({
-      id: stop.id,
-      city: stop.city,
-      visitBefore: stop.visitBefore,
-      stayDays: normalizeStayDaysInput(stop.stayDays)
-    })),
+    stops: stops.value,
     startDate: startDate.value,
-    passengers: normalizePassengerCountInput(passengers.value),
+    passengers: passengers.value,
     lockOrder: lockOrder.value
-  }));
+  });
 }
 
 function addStop() {
@@ -202,19 +143,13 @@ function moveStop(index, direction) {
 }
 
 function snapshotTripInput() {
-  return {
+  return snapshotTripInputFrom({
     origin: origin.value,
     startDate: startDate.value,
-    passengers: normalizePassengerCountInput(passengers.value),
+    passengers: passengers.value,
     lockOrder: lockOrder.value,
-    stops: stops.value.map((stop, index) => ({
-      id: stop.id,
-      index,
-      city: stop.city,
-      visitBefore: stop.visitBefore,
-      stayDays: stop.stayDays
-    }))
-  };
+    stops: stops.value
+  });
 }
 
 function trackTripInputChanges() {
@@ -223,55 +158,6 @@ function trackTripInputChanges() {
     appendInputChange(change);
   }
   lastInputSnapshot = nextSnapshot;
-}
-
-function describeTripInputChanges(previous, next) {
-  const changes = [];
-  if (!previous) return changes;
-
-  if (previous.origin !== next.origin) {
-    changes.push(`Start/return city changed from ${previous.origin || 'empty'} to ${next.origin || 'empty'}.`);
-  }
-  if (previous.startDate !== next.startDate) {
-    changes.push(`Trip start changed from ${previous.startDate || 'empty'} to ${next.startDate || 'empty'}.`);
-  }
-  if (previous.passengers !== next.passengers) {
-    changes.push(`Passengers changed from ${previous.passengers || 1} to ${next.passengers || 1}.`);
-  }
-  if (previous.lockOrder !== next.lockOrder) {
-    changes.push(`Lock-order setting changed to ${next.lockOrder ? 'enabled' : 'disabled'}.`);
-  }
-
-  const previousById = new Map(previous.stops.map((stop) => [stop.id, stop]));
-  const nextById = new Map(next.stops.map((stop) => [stop.id, stop]));
-
-  for (const stop of next.stops) {
-    const before = previousById.get(stop.id);
-    if (!before) {
-      changes.push(`Stop ${stop.index + 1} added: ${formatStopForLog(stop)}.`);
-      continue;
-    }
-    if (before.index !== stop.index) {
-      changes.push(`${formatStopLabel(stop)} moved from row ${before.index + 1} to row ${stop.index + 1}.`);
-    }
-    if (before.city !== stop.city) {
-      changes.push(`Stop ${stop.index + 1} city changed from ${before.city || 'empty'} to ${stop.city || 'empty'}.`);
-    }
-    if (before.visitBefore !== stop.visitBefore) {
-      changes.push(`${formatStopLabel(stop)} visit-before date changed from ${before.visitBefore || 'empty'} to ${stop.visitBefore || 'empty'}.`);
-    }
-    if (before.stayDays !== stop.stayDays) {
-      changes.push(`${formatStopLabel(stop)} days-to-spend changed from ${before.stayDays || 0} to ${stop.stayDays || 0}.`);
-    }
-  }
-
-  for (const stop of previous.stops) {
-    if (!nextById.has(stop.id)) {
-      changes.push(`Stop ${stop.index + 1} removed: ${formatStopForLog(stop)}.`);
-    }
-  }
-
-  return changes;
 }
 
 function appendInputChange(message) {
@@ -287,15 +173,6 @@ function appendInputChange(message) {
       }))
     }
   ];
-}
-
-function formatStopLabel(stop) {
-  return `Stop ${stop.index + 1} (${stop.city || 'empty'})`;
-}
-
-function formatStopForLog(stop) {
-  const visitBefore = stop.visitBefore ? `, visit before ${stop.visitBefore}` : '';
-  return `${stop.city || 'empty'}${visitBefore}, spend ${stop.stayDays || 0} day${Number(stop.stayDays) === 1 ? '' : 's'}`;
 }
 
 function buildRequirements() {
@@ -609,7 +486,18 @@ function pricedLegForDisplayLeg(option, displayLeg) {
 }
 
 async function copyPricingLog() {
-  const text = buildPricingLog();
+  const text = buildPricingLogText({
+    origin: origin.value,
+    stops: stops.value,
+    requirements: buildRequirements(),
+    startDate: startDate.value,
+    passengers: normalizePassengerCountInput(passengers.value),
+    lockOrder: lockOrder.value,
+    inputChangeLog: inputChangeLog.value,
+    plan: plan.value,
+    quote: priceQuote.value,
+    priceProgress: priceProgress.value
+  });
   try {
     await navigator.clipboard.writeText(text);
     copyLogStatus.value = 'Copied';
@@ -620,98 +508,6 @@ async function copyPricingLog() {
   setTimeout(() => {
     copyLogStatus.value = '';
   }, 1800);
-}
-
-function buildPricingLog() {
-  const routePlan = plan.value;
-  const quote = priceQuote.value;
-  const lines = [
-    'Microwave Travel price-search log',
-    `Generated: ${new Date().toISOString()}`,
-    '',
-    'Goal for agent:',
-    'Analyze this route-search log and suggest how to reduce API requests, improve candidate ordering, caching, batching, or route/date selection without missing cheaper routes.',
-    '',
-    'Trip input:',
-    `Origin/return: ${origin.value}`,
-    `Stops: ${stops.value.map((stop) => `${stop.city} (${Number(stop.stayDays) || 0}d)`).join(' -> ')}`,
-    `Visit-before dates: ${buildRequirements().map((item) => `${item.city} before ${item.date}`).join('; ') || 'none'}`,
-    `Start date: ${startDate.value}`,
-    `Passengers: ${normalizePassengerCountInput(passengers.value)}`,
-    `Lock order: ${lockOrder.value ? 'yes' : 'no'}`,
-    '',
-    `Input change events (${inputChangeLog.value.length}):`,
-    ...(inputChangeLog.value.length
-      ? inputChangeLog.value.map((event, index) => `${index + 1}. [${event.at}] ${event.message} | stops now: ${event.stops.map(formatStopSnapshot).join(' -> ')}`)
-      : ['No user input changes recorded since page load.']),
-    '',
-    'Current displayed route:',
-    routePlan?.legs?.length
-      ? routePlan.legs.map((leg, index) => `${index + 1}. ${leg.from} -> ${leg.to} | ${leg.mode} | depart ${leg.departOn} | arrive ${leg.arriveBy} | ${leg.hours}h | ${leg.distanceKm} km`).join('\n')
-      : 'No route plan available.',
-    '',
-    'Price result:',
-    quote
-      ? JSON.stringify({
-          totalAmount: quote.totalAmount,
-          currency: quote.currency,
-          pricedLegCount: quote.pricedLegCount,
-          legCount: quote.legCount,
-          message: quote.message,
-          optimization: quote.optimization || null,
-          optimizedRouteOptions: (quote.optimizedRouteOptions || []).map((option) => ({
-            route: option.route,
-            departureDate: option.departureDate,
-            dateShiftDays: option.dateShiftDays || 0,
-            stayFlexDays: option.stayFlexDays || 0,
-            amount: option.amount,
-            totalAmount: option.totalAmount,
-            pricedLegCount: option.pricedLegCount,
-            legCount: option.legCount
-          })),
-          optimizedRouteSkippedOptions: (quote.optimizedRouteSkippedOptions || []).map((option) => ({
-            route: option.route,
-            departureDate: option.departureDate,
-            reason: option.reason,
-            message: option.message,
-            details: option.details
-          }))
-        }, null, 2)
-      : 'Pricing is still running or no quote is available.',
-    '',
-    `Progress events (${priceProgress.value.length}):`,
-    ...priceProgress.value.map(formatProgressEvent),
-    '',
-    `Provider attempts (${quote?.attempts?.length || 0}):`,
-    ...(quote?.attempts || []).map((attempt, index) => `${index + 1}. ${JSON.stringify(attempt)}`),
-    '',
-    `Priced legs (${quote?.legs?.length || 0}):`,
-    ...(quote?.legs || []).map((leg, index) => `${index + 1}. ${JSON.stringify(leg)}`)
-  ];
-
-  return lines.join('\n');
-}
-
-function formatProgressEvent(event, index) {
-  const details = event.details ? ` | ${JSON.stringify(event.details)}` : '';
-  return `${index + 1}. [${event.at || 'no-time'}] ${event.step}: ${event.message}${details}`;
-}
-
-function formatStopSnapshot(stop) {
-  const visitBefore = stop.visitBefore ? `, before ${stop.visitBefore}` : '';
-  return `${stop.city || 'empty'} (${stop.stayDays || 0}d${visitBefore})`;
-}
-
-function copyLogWithFallback(text) {
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', '');
-  textarea.style.position = 'fixed';
-  textarea.style.left = '-9999px';
-  document.body.append(textarea);
-  textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
 }
 
 function legBooking(index) {
