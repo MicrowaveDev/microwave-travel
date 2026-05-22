@@ -4,6 +4,12 @@
 // panel. Receives index/leg/pricedLeg/booking/priceError as props; no
 // global state. See AGENTS.md "Module Map".
 import { computed } from 'vue';
+import {
+  elapsedMinutes,
+  estimateLayoverMinutes,
+  formatMinutesLabel,
+  totalLayoverMinutes
+} from './lib/leg-time.js';
 
 const props = defineProps({
   index: { type: Number, required: true },
@@ -52,17 +58,53 @@ const baggageChips = computed(() => {
 
 const originCode = computed(() => props.pricedLeg?.origin || cityCodeFallback(props.leg?.from));
 const destinationCode = computed(() => props.pricedLeg?.destination || cityCodeFallback(props.leg?.to));
-const durationLabel = computed(() => formatDurationLabel(props.leg?.hours));
+const totalDurationMinutes = computed(() => {
+  const elapsed = elapsedMinutes(props.pricedLeg?.departureAt, props.pricedLeg?.arrivalAt);
+  if (Number.isFinite(elapsed) && elapsed > 0) return elapsed;
+  const hours = Number(props.leg?.hours);
+  return Number.isFinite(hours) && hours > 0 ? Math.round(hours * 60) : 0;
+});
+const durationLabel = computed(() => formatMinutesLabel(totalDurationMinutes.value));
+const stopCount = computed(() => {
+  const value = Number(props.pricedLeg?.stopCount);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+});
+const layoverDetail = computed(() => {
+  if (stopCount.value === 0) return null;
+  const precise = totalLayoverMinutes(props.pricedLeg?.flightSegments);
+  if (Number.isFinite(precise) && precise > 0) {
+    return { minutes: precise, estimated: false };
+  }
+  const estimate = estimateLayoverMinutes(totalDurationMinutes.value, props.leg?.distanceKm);
+  if (Number.isFinite(estimate) && estimate > 0) {
+    return { minutes: estimate, estimated: true };
+  }
+  return null;
+});
 const modeLabel = computed(() => {
   if (props.leg?.mode === 'bus') return 'Bus';
   if (props.leg?.mode === 'train') return 'Train';
-  return 'Direct';
+  if (stopCount.value === 0) return 'Direct';
+  const stops = `${stopCount.value} stop${stopCount.value === 1 ? '' : 's'}`;
+  const layover = layoverDetail.value
+    ? ` (${layoverDetail.value.estimated ? '~' : ''}${formatMinutesLabel(layoverDetail.value.minutes)})`
+    : '';
+  return `${hubPrefix.value}${stops}${layover}`;
+});
+const hubPrefix = computed(() => {
+  const code = props.pricedLeg?.hubCode;
+  if (!code) return '';
+  const label = props.pricedLeg?.hubLabel;
+  const display = label ? `${label} (${code})` : code;
+  return props.pricedLeg?.hubInferred ? `Likely via ${display} · ` : `Via ${display} · `;
 });
 const arrivesLater = computed(() =>
   Boolean(props.leg?.arriveBy && props.leg?.departOn && props.leg.arriveBy !== props.leg.departOn)
 );
 const departLabel = computed(() => formatLegDate(props.leg?.departOn));
 const arriveLabel = computed(() => formatLegDate(props.leg?.arriveBy));
+const departTimeLabel = computed(() => formatLegTime(props.pricedLeg?.departureAt));
+const arriveTimeLabel = computed(() => formatLegTime(props.pricedLeg?.arrivalAt));
 const reliabilityPercent = computed(() => Math.round((props.leg?.reliability ?? 0) * 100));
 
 function cityCodeFallback(city) {
@@ -80,14 +122,15 @@ function formatLegDate(value) {
   return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-function formatDurationLabel(hours) {
-  const numeric = Number(hours);
-  if (!Number.isFinite(numeric) || numeric <= 0) return '';
-  const whole = Math.floor(numeric);
-  const minutes = Math.round((numeric - whole) * 60);
-  if (whole === 0) return `${minutes}m`;
-  if (minutes === 0) return `${whole}h`;
-  return `${whole}h ${minutes}m`;
+function formatLegTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  // Render the time in the timestamp's original zone — provider ISO
+  // strings carry departure-local time (e.g. "2026-05-21T13:30:00+01:00"),
+  // and travel times are most useful in the city's local time.
+  const match = /T(\d{2}):(\d{2})/.exec(String(value));
+  return match ? `${match[1]}:${match[2]}` : '';
 }
 
 function shortenBaggageDetail(text) {
@@ -126,7 +169,9 @@ function capitalize(value) {
         <div class="leg-strip-end">
           <span class="leg-code">{{ originCode }}</span>
           <span class="leg-city">{{ leg.from }}</span>
-          <span class="leg-date">{{ departLabel }}</span>
+          <span class="leg-date">
+            <span v-if="departTimeLabel" class="leg-time">{{ departTimeLabel }} · </span>{{ departLabel }}
+          </span>
         </div>
         <div class="leg-strip-middle">
           <span class="leg-duration">{{ durationLabel }} · {{ modeLabel }}</span>
@@ -141,7 +186,7 @@ function capitalize(value) {
           <span class="leg-code">{{ destinationCode }}</span>
           <span class="leg-city">{{ leg.to }}</span>
           <span class="leg-date">
-            {{ arriveLabel }}
+            <span v-if="arriveTimeLabel" class="leg-time">{{ arriveTimeLabel }} · </span>{{ arriveLabel }}
             <span v-if="arrivesLater" class="leg-overnight" title="Arrives on a later day">+1</span>
           </span>
         </div>
@@ -321,6 +366,11 @@ function capitalize(value) {
   display: inline-flex;
   align-items: baseline;
   gap: 4px;
+}
+
+.leg-time {
+  color: #172026;
+  font-weight: 800;
 }
 
 .leg-overnight {

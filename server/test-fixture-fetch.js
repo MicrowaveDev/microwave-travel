@@ -66,6 +66,9 @@ function aviasalesResponse(url, fixture) {
           currency: 'usd',
           airline: offer.carrier || 'Fixture Air',
           baggage: offer.baggage || undefined,
+          departure_at: offer.departureAt || undefined,
+          duration: Number.isFinite(offer.durationMinutes) ? offer.durationMinutes : undefined,
+          transfers: Number.isFinite(offer.transfers) ? offer.transfers : 0,
           search_id: `fixture-aviasales-${route}`
         }]
       : []

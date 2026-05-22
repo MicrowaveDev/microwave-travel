@@ -7,8 +7,8 @@
     "prices": {
       "OPO-DXB-2026-05-20": { "price": 426, "carrier": "TP", "baggage": "Baggage allowance not returned in fixture; check fare rules before booking." },
       "OPO-DXB-2026-05-21": { "price": 378, "carrier": "TP", "baggage": "Baggage allowance not returned in fixture; check fare rules before booking." },
-      "OPO-MAD-2026-05-21": { "price": 23, "carrier": "FR", "baggage": "Small cabin bag included; checked bag costs extra." },
-      "MAD-DXB-2026-05-21": { "price": 254, "carrier": "PC", "baggage": "Cabin bag included; checked baggage depends on fare." },
+      "OPO-MAD-2026-05-21": { "price": 23, "carrier": "FR", "baggage": "Small cabin bag included; checked bag costs extra.", "departureAt": "2026-05-21T13:30:00+01:00", "durationMinutes": 130 },
+      "MAD-DXB-2026-05-21": { "price": 254, "carrier": "PC", "baggage": "Cabin bag included; checked baggage depends on fare.", "departureAt": "2026-05-21T19:15:00+02:00", "durationMinutes": 405, "transfers": 1 },
       "OPO-ATH-2026-05-20": { "price": 110, "carrier": "A3" },
       "ATH-DXB-2026-05-20": { "price": 237, "carrier": "A3" },
       "OPO-BCN-2026-05-20": { "price": 30, "carrier": "VY" },

@@ -5,11 +5,15 @@ const tripState = {
   stops: [
     { id: 'dubai', city: 'Dubai', visitBefore: '2026-06-01', stayDays: 3 },
     { id: 'moscow', city: 'Moscow', visitBefore: '', stayDays: 14 },
-    { id: 'kaliningrad', city: 'Kaliningrad', visitBefore: '', stayDays: 7 }
+    { id: 'kaliningrad', city: 'Kaliningrad', visitBefore: '', stayDays: 7 },
+    // Explicit return stop — start city no longer auto-loops back.
+    { id: 'porto-return', city: 'Porto', visitBefore: '', stayDays: 0 }
   ],
   startDate: '2026-05-20',
   passengers: 1,
-  lockOrder: false
+  // Porto is in stops as the explicit return — lock so the optimizer
+  // doesn't reorder Porto into the middle.
+  lockOrder: true
 };
 
 test.beforeEach(async ({ page }) => {
@@ -31,6 +35,15 @@ test('prices the Porto route with date-flex transfer options', async ({ page }) 
   await expect(dubaiToMoscow.locator('.leg-strip-end').first().locator('.leg-code')).toHaveText('DXB');
   await expect(dubaiToMoscow.locator('.leg-strip-end').last().locator('.leg-code')).toHaveText('MOW');
   await expect(dubaiToMoscow.locator('.leg-date').first()).toContainText('May 24');
+
+  const portoToMadrid = page.locator('.leg-card', { has: page.getByRole('heading', { name: /Porto.*Madrid/ }) });
+  await expect(portoToMadrid.locator('.leg-strip-end').first().locator('.leg-time')).toContainText('13:30');
+  // 13:30 +01:00 + 130 min = 14:40 UTC = 16:40 Europe/Madrid (CEST)
+  await expect(portoToMadrid.locator('.leg-strip-end').last().locator('.leg-time')).toContainText('16:40');
+  await expect(portoToMadrid.locator('.leg-duration')).toContainText('Direct');
+
+  const madridToDubai = page.locator('.leg-card', { has: page.getByRole('heading', { name: /Madrid.*Dubai/ }) });
+  await expect(madridToDubai.locator('.leg-duration')).toContainText('1 stop');
   await expect(page.getByRole('link', { name: 'Ryanair (FR)' })).toHaveAttribute('href', 'https://www.ryanair.com/');
   await expect(page.getByRole('link', { name: 'Pegasus Airlines (PC)' })).toHaveAttribute('href', 'https://www.flypgs.com/');
   for (const summary of await page.locator('.leg-details > summary').all()) {
@@ -70,7 +83,7 @@ test('keeps skipped transfer diagnostics compact and copyable', async ({ page })
 
 test('shows validation feedback from the optimize endpoint', async ({ page }) => {
   await page.goto('/');
-  await page.getByLabel('Start and return city').fill('');
+  await page.getByLabel('Start city').fill('');
   await page.getByRole('button', { name: 'Optimize route' }).click();
   await expect(page.getByText('Choose a starting city.')).toBeVisible();
 });

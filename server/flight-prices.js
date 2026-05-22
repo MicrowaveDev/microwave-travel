@@ -809,7 +809,7 @@ function sameDisplayLeg(displayLeg, quotedLeg) {
 
 function routeAnalysisCacheKey({ legs, requirements, passengers }) {
   return stableCacheKey('route-analysis', {
-    version: 4,
+    version: 8,
     legs: legs.map(cacheableLeg),
     requirements,
     passengers,
@@ -819,7 +819,7 @@ function routeAnalysisCacheKey({ legs, requirements, passengers }) {
 
 function legBundleCacheKey(scope, legs, details = {}) {
   return stableCacheKey('leg-bundle', {
-    version: 1,
+    version: 5,
     scope,
     legs: legs.map(cacheableLeg),
     details,
@@ -842,9 +842,12 @@ function priceCacheConfig() {
     travelpayoutsMarker: process.env.TRAVELPAYOUTS_MARKER || null,
     providers: {
       serpapi: Boolean(process.env.SERPAPI_KEY),
+      duffel: Boolean(process.env.DUFFEL_ACCESS_TOKEN),
       aviasales: Boolean(process.env.TRAVELPAYOUTS_TOKEN),
       yandexRasp: Boolean(process.env.YANDEX_RASP_API_KEY)
-    }
+    },
+    duffelMaxRequestsPerSearch: process.env.DUFFEL_MAX_REQUESTS_PER_SEARCH || null,
+    duffelAllowLive: process.env.DUFFEL_ALLOW_LIVE === 'true'
   };
 }
 
@@ -868,4 +871,3 @@ function normalizePassengerCount(value) {
   if (!Number.isInteger(count)) return 1;
   return Math.min(9, Math.max(1, count));
 }
-

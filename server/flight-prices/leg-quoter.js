@@ -25,11 +25,14 @@ import { providerLabel } from './provider-labels.js';
 import {
   createProviderState,
   disableProvider,
+  incrementProviderNetworkRequest,
   markProviderSkipLogged,
   providerDisabledReason,
+  providerNetworkRequestCount,
   shouldDisableProvider
 } from './provider-state.js';
 import {
+  quoteLegWithDuffel,
   quoteLegWithSerpApi,
   quoteLegWithTravelpayouts,
   quoteLegWithYandexRasp,
@@ -51,6 +54,7 @@ export async function quoteLeg(leg, options = {}) {
       ]
     : [
         ['serpapi', () => quoteLegWithSerpApi(leg)],
+        ['duffel', () => quoteLegWithDuffel(leg)],
         ['aviasales', () => quoteLegWithTravelpayouts(leg)]
   ];
   const attempts = [];
@@ -73,7 +77,8 @@ export async function quoteLeg(leg, options = {}) {
       onProgress,
       skipNetworkReason: disabledReason,
       progressDetail: options.progressDetail,
-      cachedQuote: providerCache.get(legQuoteCacheKey(provider, leg)) || null
+      cachedQuote: providerCache.get(legQuoteCacheKey(provider, leg)) || null,
+      networkGuard: () => providerNetworkGuard(providerState, provider)
     });
     attempts.push({
       ...result.summary,
@@ -128,7 +133,15 @@ async function tryCachedProvider(provider, leg, fn, options = {}) {
     }
     return {
       quote: withNormalizedBaggage(cloneQuote(cachedQuote)),
-      summary: { provider, ok: true, cached: true }
+      summary: Number.isFinite(cachedQuote.amount) || cachedQuote.schedule
+        ? { provider, ok: true, cached: true }
+        : {
+            provider,
+            ok: false,
+            cached: true,
+            noPrice: true,
+            error: cachedQuote.error || 'Cached provider result has no comparable USD price.'
+          }
     };
   }
 
@@ -136,6 +149,14 @@ async function tryCachedProvider(provider, leg, fn, options = {}) {
     return {
       quote: null,
       summary: { provider, ok: false, skipped: true, error: options.skipNetworkReason }
+    };
+  }
+
+  const networkGuardReason = typeof options.networkGuard === 'function' ? options.networkGuard() : null;
+  if (networkGuardReason) {
+    return {
+      quote: null,
+      summary: { provider, ok: false, skipped: true, error: networkGuardReason }
     };
   }
 
@@ -147,6 +168,24 @@ async function tryCachedProvider(provider, leg, fn, options = {}) {
   return result;
 }
 
+function providerNetworkGuard(providerState, provider) {
+  if (provider !== 'duffel') return null;
+  const limit = duffelMaxRequestsPerSearch();
+  if (!Number.isFinite(limit) || limit <= 0) return null;
+  if (providerNetworkRequestCount(providerState, provider) >= limit) {
+    return `Duffel per-search request cap reached (${limit}).`;
+  }
+  incrementProviderNetworkRequest(providerState, provider);
+  return null;
+}
+
+function duffelMaxRequestsPerSearch() {
+  return Number(process.env.DUFFEL_MAX_REQUESTS_PER_SEARCH || 10);
+}
+
 function legQuoteCacheKey(provider, leg) {
-  return [provider, leg.origin, leg.destination, leg.departureDate, leg.passengers || 1, 'USD'].join('|');
+  // Bump the trailing version tag whenever the priced-leg shape changes.
+  // v2: added departureAt/arrivalAt. v3: added stopCount/hubCode.
+  // v4: added flightSegments. v5: added hubLabel/hubInferred.
+  return [provider, leg.origin, leg.destination, leg.departureDate, leg.passengers || 1, 'USD', 'v5'].join('|');
 }
