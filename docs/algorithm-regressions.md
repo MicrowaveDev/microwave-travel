@@ -1,6 +1,6 @@
 # Algorithm Regression Log
 
-Last updated: 2026-05-21
+Last updated: 2026-05-22
 
 This document records route-optimization and pricing-search regressions that appeared while changing the algorithm. Update it whenever a new regression is discovered or fixed, so future algorithm changes can check known failure patterns before repeating them.
 
@@ -10,6 +10,41 @@ This document records route-optimization and pricing-search regressions that app
 - Add a new entry when a regression is reported, even if the fix is small.
 - Each entry should include the affected scenario, what changed, why it broke, the user-visible impact, the fix, and the regression tests that protect it.
 - Keep entries factual and short enough to scan during future implementation work.
+
+## 2026-05-22: Dropped Auto-Return-to-Origin From Route Construction
+
+### Scenario
+
+A user planning a one-way trip (Porto → Dubai → Moscow → Kaliningrad) saw the optimizer append `→ Porto` to the end of every itinerary even though they only typed those four cities.
+
+### Symptom
+
+The "Start and return city" field implicitly closed the loop back to the origin via `[origin, ...stops, origin]` in `buildItinerary`. Users who wanted to end somewhere other than their start city couldn't express it, and the return leg often dominated pricing for trips that didn't actually need it.
+
+### Triggering Change
+
+UX refactor: the field was relabeled to **Start city** and the user now picks the final destination by explicitly adding it as the last stop (e.g. adding `Porto` if they want to return).
+
+### Root Cause
+
+`buildItinerary` in `server/optimizer.js` hard-coded `[origin, ...stops.map(stop => stop.city), origin]`. The response also exposed `returnsTo: origin`, which `App.vue`'s `routeLabel` fallback assumed was always present.
+
+### User-Visible Impact
+
+Trips ended at the origin whether the user wanted that or not. Pricing and the price-log embedded a return leg by default, which inflated totals for travellers who weren't flying home from the trip's end.
+
+### Fix
+
+- `buildItinerary`: route is now `[origin, ...stops.map(stop => stop.city)]` — no trailing origin.
+- `optimizeTrip` response no longer includes `returnsTo`.
+- `App.vue`: input label is "Start city"; `routeLabel` fallback drops the `returnsTo` segment.
+- `pricing-log.js` writes `Start city:` instead of `Origin/return:`; `trip-input-changes.js` says "Start city changed…".
+- Porto smoke test and the Playwright trip state add `Porto` as an explicit final stop so the round-trip + return-leg-recovery coverage stays identical.
+
+### Regression Coverage
+
+- `npm run test:route:porto` exercises the explicit-return scenario with `stops: ['Dubai', 'Moscow', 'Kaliningrad', 'Porto']`.
+- `npm run test:e2e` first test loads the same trip state and expects `Porto → Madrid → Dubai → Moscow → … → Porto`.
 
 ## 2026-05-21: Repeated Route Analysis Replayed Cached Candidates
 

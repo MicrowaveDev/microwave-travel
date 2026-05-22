@@ -176,7 +176,6 @@ export function optimizeTrip(input) {
   return {
     origin,
     stops: orderedStops,
-    returnsTo: origin,
     score,
     totalHours: round1(itinerary.totalHours),
     totalDistanceKm: Math.round(itinerary.totalDistanceKm),
@@ -268,7 +267,10 @@ function takeStayHours(stayQueue, city) {
 }
 
 function buildItinerary(origin, stops, startDate) {
-  const route = collapseConsecutiveDuplicates(expandRouteForTransfers(expandReturnHubs([origin, ...stops.map((stop) => stop.city), origin])));
+  // The trip is one-way: start at origin, visit each stop in order, end
+  // at the last stop. To return to origin, the caller adds it as an
+  // explicit final stop.
+  const route = collapseConsecutiveDuplicates(expandRouteForTransfers(expandReturnHubs([origin, ...stops.map((stop) => stop.city)])));
   return buildItineraryFromRoute(route, startDate, buildStayQueue(stops));
 }
 

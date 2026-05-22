@@ -25,7 +25,7 @@ export function buildPricingLog(input) {
     'Analyze this route-search log and suggest how to reduce API requests, improve candidate ordering, caching, batching, or route/date selection without missing cheaper routes.',
     '',
     'Trip input:',
-    `Origin/return: ${origin}`,
+    `Start city: ${origin}`,
     `Stops: ${stops.map((stop) => `${stop.city} (${Number(stop.stayDays) || 0}d)`).join(' -> ')}`,
     `Visit-before dates: ${requirements.map((item) => `${item.city} before ${item.date}`).join('; ') || 'none'}`,
     `Start date: ${startDate}`,

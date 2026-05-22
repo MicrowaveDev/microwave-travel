@@ -10,15 +10,22 @@ import fixture from '../fixtures/porto-route-prices.json' with { type: 'json' };
 
 const tripInput = {
   origin: 'Porto',
-  stops: ['Dubai', 'Moscow', 'Kaliningrad'],
+  // Porto is an explicit final stop so this regression keeps testing the
+  // round-trip + return-leg recovery after auto-return-to-origin was
+  // dropped from the optimizer.
+  stops: ['Dubai', 'Moscow', 'Kaliningrad', 'Porto'],
   stopDetails: [
     { city: 'Dubai', stayDays: 3 },
     { city: 'Moscow', stayDays: 14 },
-    { city: 'Kaliningrad', stayDays: 7 }
+    { city: 'Kaliningrad', stayDays: 7 },
+    { city: 'Porto', stayDays: 0 }
   ],
   requirements: [{ city: 'Dubai', type: 'before', date: '2026-06-01' }],
   startDate: '2026-05-20',
-  lockOrder: false
+  // Lock the order — Porto now appears as both origin and final stop,
+  // so without lockOrder the optimizer would reorder Porto out of the
+  // tail and skip the Kaliningrad → Gdansk → Porto return leg.
+  lockOrder: true
 };
 
 const originalEnv = {

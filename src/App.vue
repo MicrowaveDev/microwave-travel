@@ -64,7 +64,7 @@ const routeLabel = computed(() => {
   if (plan.value.legs?.length) {
     return [plan.value.legs[0].from, ...plan.value.legs.map((leg) => leg.to)].join(' -> ');
   }
-  return [plan.value.origin, ...plan.value.stops, plan.value.returnsTo].join(' -> ');
+  return [plan.value.origin, ...plan.value.stops].join(' -> ');
 });
 
 const routeSegments = computed(() => plan.value?.legs || []);
@@ -575,7 +575,7 @@ optimize();
       </div>
 
       <label>
-        Start and return city
+        Start city
         <input v-model="origin" list="city-options" type="search" autocomplete="off" @click="showCityOptions" @focus="showCityOptions" />
       </label>
 

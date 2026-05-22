@@ -7,15 +7,22 @@ const shouldPrintJson = process.argv.includes('--json');
 
 const tripInput = {
   origin: 'Porto',
-  stops: ['Dubai', 'Moscow', 'Kaliningrad'],
+  // Porto is appended as the final stop so the regression exercises the
+  // same round-trip + return-leg-recovery as before the auto-return was
+  // dropped from the optimizer.
+  stops: ['Dubai', 'Moscow', 'Kaliningrad', 'Porto'],
   stopDetails: [
     { city: 'Dubai', stayDays: 3 },
     { city: 'Moscow', stayDays: 14 },
-    { city: 'Kaliningrad', stayDays: 7 }
+    { city: 'Kaliningrad', stayDays: 7 },
+    { city: 'Porto', stayDays: 0 }
   ],
   requirements: [{ city: 'Dubai', date: '2026-06-01' }],
   startDate: '2026-05-20',
-  lockOrder: false
+  // Lock the order now that Porto is a stop too — otherwise
+  // findBestStopOrder may reorder Porto into the middle of the trip and
+  // skip the Kaliningrad → Gdansk → Porto return leg.
+  lockOrder: true
 };
 
 const mockRoutePrices = new Map([

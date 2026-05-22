@@ -26,7 +26,7 @@ export function describeTripInputChanges(previous, next) {
   if (!previous) return changes;
 
   if (previous.origin !== next.origin) {
-    changes.push(`Start/return city changed from ${previous.origin || 'empty'} to ${next.origin || 'empty'}.`);
+    changes.push(`Start city changed from ${previous.origin || 'empty'} to ${next.origin || 'empty'}.`);
   }
   if (previous.startDate !== next.startDate) {
     changes.push(`Trip start changed from ${previous.startDate || 'empty'} to ${next.startDate || 'empty'}.`);

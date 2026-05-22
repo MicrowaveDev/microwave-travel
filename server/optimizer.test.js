@@ -38,7 +38,8 @@ describe('travel optimizer', () => {
   it('continues from Dubai after visiting before a date', () => {
     const plan = optimizeTrip({
       origin: 'porto',
-      stops: ['kaliningrad', 'moscow', 'dubai'],
+      // Trailing 'porto' is now explicit (auto-return-to-origin was dropped).
+      stops: ['kaliningrad', 'moscow', 'dubai', 'porto'],
       requirements: [{ city: 'dubai', type: 'before', date: '2026-06-01' }],
       startDate: '2026-05-20',
       lockOrder: true
@@ -56,7 +57,8 @@ describe('travel optimizer', () => {
   it('considers a Europe hub when returning from Dubai to Porto', () => {
     const plan = optimizeTrip({
       origin: 'porto',
-      stops: ['dubai'],
+      // 'porto' explicitly closes the loop now that auto-return was dropped.
+      stops: ['dubai', 'porto'],
       startDate: '2026-05-20',
       lockOrder: true
     });
@@ -98,7 +100,7 @@ describe('travel optimizer', () => {
   it('routes Kaliningrad through Gdansk ground transfer', () => {
     const plan = optimizeTrip({
       origin: 'porto',
-      stops: ['kaliningrad', 'moscow'],
+      stops: ['kaliningrad', 'moscow', 'porto'],
       startDate: '2026-05-20',
       lockOrder: true
     });
@@ -112,7 +114,7 @@ describe('travel optimizer', () => {
   it('does not route Russia mainland to Kaliningrad through Gdansk', () => {
     const plan = optimizeTrip({
       origin: 'moscow',
-      stops: ['kaliningrad'],
+      stops: ['kaliningrad', 'moscow'],
       startDate: '2026-05-20',
       lockOrder: true
     });
@@ -126,7 +128,7 @@ describe('travel optimizer', () => {
   it('does not route Saint Petersburg to Kaliningrad through Gdansk', () => {
     const plan = optimizeTrip({
       origin: 'saint petersburg',
-      stops: ['kaliningrad'],
+      stops: ['kaliningrad', 'saint petersburg'],
       startDate: '2026-05-20',
       lockOrder: true
     });
@@ -140,7 +142,7 @@ describe('travel optimizer', () => {
   it('removes duplicate consecutive city legs', () => {
     const plan = optimizeTrip({
       origin: 'porto',
-      stops: ['dubai', 'dubai'],
+      stops: ['dubai', 'dubai', 'porto'],
       startDate: '2026-05-20',
       lockOrder: true
     });
