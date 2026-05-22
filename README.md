@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-The Vue app runs through Vite, and the Express API listens on `http://127.0.0.1:3444`.
+The Vue dev client runs at `http://127.0.0.1:5175` and the Express API listens on `http://127.0.0.1:3464`. Override either with the `PORT` env var (API) or by passing `--port` to Vite (`npm run client -- --port 5180`).
 
 ## Flight Price APIs
 

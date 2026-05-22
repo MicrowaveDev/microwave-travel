@@ -4,7 +4,7 @@ import { createApp } from './app.js';
 
 installFixtureFetchFromEnv();
 
-const port = process.env.PORT || 3444;
+const port = process.env.PORT || 3464;
 const app = createApp();
 
 app.listen(port, () => {
