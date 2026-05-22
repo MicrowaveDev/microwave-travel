@@ -47,6 +47,42 @@
   opacity: 0.75;
 }
 
+.transfer-offpeak-details {
+  margin: -2px 0 10px;
+  border: 1px dashed #d8e0df;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #fbfaf6;
+}
+
+.transfer-offpeak-details summary {
+  cursor: pointer;
+  color: #7a5a1b;
+  font-size: 0.78rem;
+  font-weight: 800;
+  list-style: none;
+}
+
+.transfer-offpeak-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.transfer-offpeak-details summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 4px;
+  transition: transform 0.15s ease;
+}
+
+.transfer-offpeak-details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.transfer-offpeak-details > .transfer-options {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
 .transfer-skipped-details {
   margin-bottom: 12px;
   border: 1px dashed #d8e0df;

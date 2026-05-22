@@ -175,11 +175,13 @@ function capitalize(value) {
         </div>
         <div class="leg-strip-middle">
           <span class="leg-duration">{{ durationLabel }} · {{ modeLabel }}</span>
-          <span class="leg-strip-line" aria-hidden="true">
-            <span class="leg-strip-dot leg-strip-dot--start"></span>
-            <span class="leg-strip-icon">{{ leg.mode === 'bus' ? '⇢' : '✈' }}</span>
-            <span class="leg-strip-dot leg-strip-dot--end"></span>
-          </span>
+          <div class="leg-strip-bar" :class="{ 'is-bus': leg.mode === 'bus' }" aria-hidden="true">
+            <span class="leg-strip-icon leg-strip-icon--start">{{ leg.mode === 'bus' ? '⇢' : '✈' }}</span>
+            <span class="leg-strip-segment"></span>
+            <span v-if="stopCount > 0" class="leg-strip-hub">{{ pricedLeg?.hubCode || '·' }}</span>
+            <span v-if="stopCount > 0" class="leg-strip-segment"></span>
+            <span class="leg-strip-icon leg-strip-icon--end">{{ leg.mode === 'bus' ? '⇢' : '✈' }}</span>
+          </div>
           <span class="leg-distance">{{ leg.distanceKm.toLocaleString() }} km</span>
         </div>
         <div class="leg-strip-end leg-strip-end--arrival">
@@ -399,55 +401,55 @@ function capitalize(value) {
   letter-spacing: 0.04em;
 }
 
-.leg-strip-line {
-  position: relative;
+.leg-strip-bar {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  gap: 6px;
   width: 100%;
-  min-width: 80px;
-  height: 14px;
+  min-width: 120px;
+  padding: 4px 0;
 }
 
-.leg-strip-line::before {
-  content: '';
-  position: absolute;
-  inset: 50% 6px auto;
+.leg-strip-segment {
+  flex: 1;
+  min-width: 12px;
   height: 2px;
   border-top: 2px dashed #b8d6d2;
-  transform: translateY(-1px);
 }
 
-.leg-strip.is-bus .leg-strip-line::before {
+.leg-strip-bar.is-bus .leg-strip-segment {
   border-top-color: #d8b896;
 }
 
-.leg-strip-dot {
-  position: relative;
-  z-index: 1;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #0f5d57;
-}
-
-.leg-strip.is-bus .leg-strip-dot {
-  background: #a3672a;
-}
-
 .leg-strip-icon {
-  position: relative;
-  z-index: 1;
-  padding: 0 6px;
-  background: #f5f9f8;
+  display: inline-block;
   color: #0f5d57;
-  font-size: 0.95rem;
+  font-size: 1rem;
   line-height: 1;
 }
 
-.leg-strip.is-bus .leg-strip-icon {
-  background: #fbf5ef;
+.leg-strip-icon--end {
+  transform: scaleX(-1);
+}
+
+.leg-strip-bar.is-bus .leg-strip-icon {
   color: #a3672a;
+}
+
+.leg-strip-hub {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: #b03a2e;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.leg-strip-bar.is-bus .leg-strip-hub {
+  color: #8a5a1b;
 }
 
 .leg-distance {
@@ -615,7 +617,7 @@ function capitalize(value) {
     width: 100%;
   }
 
-  .leg-strip-line {
+  .leg-strip-bar {
     flex: 1;
     margin: 0 8px;
   }

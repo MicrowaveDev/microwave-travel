@@ -84,6 +84,17 @@ const currentPriceStatus = computed(() => {
 
 const visiblePriceProgress = computed(() => priceProgress.value.slice(-8).reverse());
 const transferRouteOptions = computed(() => priceQuote.value?.optimizedRouteOptions || []);
+// Anything outside this window is considered an "off-peak" layover and
+// hidden under a spoiler so the inline list only surfaces transfers
+// with a healthy 1.5–10h wait at the hub (3–6h is the sweet spot).
+const ACCEPTABLE_LAYOVER_MIN = 90;
+const ACCEPTABLE_LAYOVER_MAX = 600;
+const acceptableTransferOptions = computed(() =>
+  transferRouteOptions.value.filter(isAcceptableLayover)
+);
+const offPeakTransferOptions = computed(() =>
+  transferRouteOptions.value.filter((option) => !isAcceptableLayover(option))
+);
 const transferSkippedOptions = computed(() => priceQuote.value?.optimizedRouteSkippedOptions || []);
 const activeTransferOption = computed(() => transferRouteOptions.value[selectedTransferOptionIndex.value] || null);
 const activePriceLegs = computed(() => activeTransferOption.value?.legs || priceQuote.value?.legs || []);
@@ -428,6 +439,39 @@ function transferSkipReason(option) {
   return 'Skipped during pricing.';
 }
 
+function transferOptionLayoverMinutes(option) {
+  if (!option?.route || option.route.length < 3 || !Array.isArray(option.legs)) return null;
+  const hub = option.route[1];
+  for (let index = 0; index < option.legs.length - 1; index += 1) {
+    const inbound = option.legs[index];
+    const outbound = option.legs[index + 1];
+    if (inbound.to !== hub || outbound.from !== hub) continue;
+    if (!inbound.arrivalAt || !outbound.departureAt) return null;
+    const start = new Date(inbound.arrivalAt).getTime();
+    const end = new Date(outbound.departureAt).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+    return Math.round((end - start) / 60000);
+  }
+  return null;
+}
+
+function isAcceptableLayover(option) {
+  const minutes = transferOptionLayoverMinutes(option);
+  // Treat unknown layover as acceptable so we don't hide options where
+  // the provider just didn't return per-leg times.
+  if (minutes === null) return true;
+  return minutes >= ACCEPTABLE_LAYOVER_MIN && minutes <= ACCEPTABLE_LAYOVER_MAX;
+}
+
+function offPeakLayoverReason(option) {
+  const minutes = transferOptionLayoverMinutes(option);
+  if (minutes === null) return '';
+  if (minutes < ACCEPTABLE_LAYOVER_MIN) return `Tight ${Math.round(minutes)}m connection`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `Long ${hours}h${mins ? ` ${mins}m` : ''} wait`;
+}
+
 function sameTransferWithoutStayFlex(left, right) {
   return Boolean(left && right) &&
     left.route?.join(' -> ') === right.route?.join(' -> ') &&
@@ -705,19 +749,35 @@ optimize();
         <p v-for="warning in plan.warnings" :key="warning">{{ warning }}</p>
       </div>
 
-      <div v-if="transferRouteOptions.length" class="transfer-options" aria-label="Transfer route options">
+      <div v-if="acceptableTransferOptions.length" class="transfer-options" aria-label="Transfer route options">
         <button
-          v-for="(option, index) in transferRouteOptions"
+          v-for="option in acceptableTransferOptions"
           :key="transferOptionKey(option)"
           type="button"
-          :class="{ active: selectedTransferOptionIndex === index }"
-          @click="selectTransferOption(index)"
+          :class="{ active: transferOptionKey(option) === transferOptionKey(activeTransferOption) }"
+          @click="selectTransferOption(transferRouteOptions.indexOf(option))"
         >
           <span>{{ transferOptionLabel(option) }}</span>
           <strong>{{ transferOptionAmount(option) }}</strong>
           <small>Transfer · {{ transferOptionDate(option) }}</small>
         </button>
       </div>
+      <details v-if="offPeakTransferOptions.length" class="transfer-offpeak-details">
+        <summary>Show {{ offPeakTransferOptions.length }} option{{ offPeakTransferOptions.length === 1 ? '' : 's' }} with off-peak layover</summary>
+        <div class="transfer-options" aria-label="Off-peak transfer route options">
+          <button
+            v-for="option in offPeakTransferOptions"
+            :key="`offpeak-${transferOptionKey(option)}`"
+            type="button"
+            :class="{ active: transferOptionKey(option) === transferOptionKey(activeTransferOption) }"
+            @click="selectTransferOption(transferRouteOptions.indexOf(option))"
+          >
+            <span>{{ transferOptionLabel(option) }}</span>
+            <strong>{{ transferOptionAmount(option) }}</strong>
+            <small>Transfer · {{ transferOptionDate(option) }} · {{ offPeakLayoverReason(option) }}</small>
+          </button>
+        </div>
+      </details>
       <details v-if="transferSkippedOptions.length" class="transfer-skipped-details">
         <summary>Skipped transfer searches ({{ transferSkippedOptions.length }})</summary>
         <ul>
